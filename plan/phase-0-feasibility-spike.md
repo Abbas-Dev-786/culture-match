@@ -14,11 +14,11 @@ Complete these tasks in order. Each task produces an artifact consumed by the ne
 
 Create:
 
-- `fixtures/qloo/`
-- `fixtures/apify/`
-- `docs/provider-field-matrix.md`
-- `docs/decision-log.md`
-- `config/markets.ts` or an equivalent validated-market configuration.
+- `lib/phase-0/fixtures/qloo/`
+- `lib/phase-0/fixtures/apify/`
+- `lib/phase-0/provider-field-matrix.md`
+- `lib/phase-0/decision-log.md`
+- `lib/phase-0/markets.ts` or an equivalent validated-market configuration.
 
 Add redaction rules before saving any provider response. Never commit API keys, authorization headers, private campaign data, or unrestricted raw payloads.
 
@@ -174,13 +174,13 @@ The deterministic matching engine must remain usable if the model is unavailable
 
 ## Deliverables
 
-- `fixtures/qloo/` sanitized request/response fixtures.
-- `fixtures/apify/` sanitized actor input/run/dataset fixtures.
-- `config/markets` or equivalent validated-market configuration.
-- Provider field matrix.
+- `lib/phase-0/fixtures/qloo/` sanitized request/response fixtures.
+- `lib/phase-0/fixtures/apify/` sanitized actor input/run/dataset fixtures.
+- `lib/phase-0/markets.ts` or equivalent validated-market configuration.
+- `lib/phase-0/provider-field-matrix.md`.
 - Runtime and model decision record.
 - Updated environment-variable checklist.
-- Written Phase 0 decision log.
+- `lib/phase-0/decision-log.md`.
 
 ## Acceptance checklist
 

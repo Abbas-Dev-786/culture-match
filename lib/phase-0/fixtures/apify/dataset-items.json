@@ -1,0 +1,333 @@
+[
+  {
+    "creator": {
+      "id": "ec63847b-b359-4601-84e7-5a5238b03f00",
+      "name": "Streetwear",
+      "bio": "Streetwear is an Instagram account (@baggysociety) dedicated to daily outfit inspiration for baggy and oversized fashion. It curates looks from various individuals, showcasing urban and street style to unite the baggy clothes community.",
+      "avatar_url": "https://pub-3370d4e4086448e68d392923ed3df2ce.r2.dev/baggysociety/profile.jpg"
+    },
+    "relevant_profile": {
+      "id": "b261c8db-8cab-4971-b31f-39af6e39573e",
+      "platform": "instagram",
+      "username": "baggysociety",
+      "url": "https://instagram.com/baggysociety",
+      "followers": 161499,
+      "engagement_rate": 0.7,
+      "is_verified": false,
+      "data_updated_at": "2026-04-01T21:04:44.825+00:00"
+    },
+    "primary_profile": {
+      "id": "b261c8db-8cab-4971-b31f-39af6e39573e",
+      "platform": "instagram",
+      "username": "baggysociety",
+      "url": "https://instagram.com/baggysociety",
+      "followers": 161499,
+      "engagement_rate": 0.7,
+      "is_verified": false,
+      "data_updated_at": "2026-04-01T21:04:44.825+00:00"
+    },
+    "match": {
+      "score": 0.58,
+      "confidence": 0.58,
+      "low_confidence": false,
+      "reasons": [
+        "The account centers on baggy and oversized outfit inspiration, but the supplied sources do not establish an India connection or engaged audience.",
+        "Owned source: “Daily outfit Inspiration for baggy/oversized fashion”",
+        "Potential discovery match; not every condition in the brief is verified by available sources."
+      ],
+      "evidence": [
+        {
+          "text": "The account centers on baggy and oversized outfit inspiration, but the supplied sources do not establish an India connection or engaged audience.",
+          "provenance": "inferred",
+          "fact_id": null,
+          "source_post_id": null,
+          "evidence_quote": null
+        },
+        {
+          "text": "Owned source: “Daily outfit Inspiration for baggy/oversized fashion”",
+          "provenance": "inferred",
+          "fact_id": null,
+          "source_post_id": null,
+          "evidence_quote": null
+        },
+        {
+          "text": "Potential discovery match; not every condition in the brief is verified by available sources.",
+          "provenance": "inferred",
+          "fact_id": null,
+          "source_post_id": null,
+          "evidence_quote": null
+        }
+      ],
+      "ranking_source": "reranked"
+    },
+    "location_unverified": true
+  },
+  {
+    "creator": {
+      "id": "27cc3716-7a3e-4483-b8bb-888f58ee55ae",
+      "name": "MILITIA MOVEMENT",
+      "bio": "Militia Movement runs the Awaited Militia / Militia Sport clothing brand, focused on streetwear such as hoodies, sweatpants, tracksuits, and track pants. Instagram content showcases camouflage and other distinctive designs, functional details, and limited product drops, with SMS signup for early access and subscriber discounts.",
+      "avatar_url": "https://pub-3370d4e4086448e68d392923ed3df2ce.r2.dev/awaitedmilitia/profile.jpg"
+    },
+    "relevant_profile": {
+      "id": "1470e7e0-581f-4d32-9f4c-6736ddc6a65d",
+      "platform": "instagram",
+      "username": "awaitedmilitia",
+      "url": "https://instagram.com/awaitedmilitia",
+      "followers": 114211,
+      "engagement_rate": 0.9,
+      "is_verified": false,
+      "data_updated_at": "2026-04-12T00:20:15.343+00:00"
+    },
+    "primary_profile": {
+      "id": "1470e7e0-581f-4d32-9f4c-6736ddc6a65d",
+      "platform": "instagram",
+      "username": "awaitedmilitia",
+      "url": "https://instagram.com/awaitedmilitia",
+      "followers": 114211,
+      "engagement_rate": 0.9,
+      "is_verified": false,
+      "data_updated_at": "2026-04-12T00:20:15.343+00:00"
+    },
+    "match": {
+      "score": 0.58,
+      "confidence": 0.58,
+      "low_confidence": false,
+      "reasons": [
+        "The drops and apparel indicate streetwear relevance, but the sources do not establish an India connection or audience engagement metrics.",
+        "Owned source: “GREY WARM UPS / TUNDRA ZIP UP”",
+        "Owned source: “comment what pieces you're grabbing”",
+        "Potential discovery match; not every condition in the brief is verified by available sources."
+      ],
+      "evidence": [
+        {
+          "text": "The drops and apparel indicate streetwear relevance, but the sources do not establish an India connection or audience engagement metrics.",
+          "provenance": "post_evidence",
+          "fact_id": "7507efcf-9295-4e22-b3e0-4331fd0f1307",
+          "source_post_id": "9618d6bf-9e06-44d1-8f96-56d00652b2fd",
+          "evidence_quote": null
+        },
+        {
+          "text": "Owned source: “GREY WARM UPS / TUNDRA ZIP UP”",
+          "provenance": "post_evidence",
+          "fact_id": "7507efcf-9295-4e22-b3e0-4331fd0f1307",
+          "source_post_id": "9618d6bf-9e06-44d1-8f96-56d00652b2fd",
+          "evidence_quote": null
+        },
+        {
+          "text": "Owned source: “comment what pieces you're grabbing”",
+          "provenance": "post_evidence",
+          "fact_id": "7507efcf-9295-4e22-b3e0-4331fd0f1307",
+          "source_post_id": "0cdc4657-75a0-49f3-9c6f-46ebf4572dd2",
+          "evidence_quote": null
+        },
+        {
+          "text": "Potential discovery match; not every condition in the brief is verified by available sources.",
+          "provenance": "inferred",
+          "fact_id": null,
+          "source_post_id": null,
+          "evidence_quote": null
+        }
+      ],
+      "ranking_source": "reranked"
+    },
+    "location_unverified": true
+  },
+  {
+    "creator": {
+      "id": "bc30b6ba-81d6-4071-a1b5-c734f3574cf8",
+      "name": "Illustrator | Logo | Merch Designer",
+      "bio": "This graphic designer and illustrator specializes in bold, underground aesthetics for streetwear and band merchandise. They create distinctive logos and artwork, often featuring reaper and skull imagery, helping brands stand out. The creator also offers commission design work and sells original artwork.",
+      "avatar_url": "https://pub-3370d4e4086448e68d392923ed3df2ce.r2.dev/steadsupply/profile.webp"
+    },
+    "relevant_profile": {
+      "id": "1793b6a7-32b9-4658-84d6-308ca947ba2d",
+      "platform": "instagram",
+      "username": "steadsupply",
+      "url": "https://instagram.com/steadsupply",
+      "followers": 11355,
+      "engagement_rate": 0.21,
+      "is_verified": false,
+      "data_updated_at": "2026-07-01T01:37:00.464354+00:00"
+    },
+    "primary_profile": {
+      "id": "1793b6a7-32b9-4658-84d6-308ca947ba2d",
+      "platform": "instagram",
+      "username": "steadsupply",
+      "url": "https://instagram.com/steadsupply",
+      "followers": 11355,
+      "engagement_rate": 0.21,
+      "is_verified": false,
+      "data_updated_at": "2026-07-01T01:37:00.464354+00:00"
+    },
+    "match": {
+      "score": 0.58,
+      "confidence": 0.58,
+      "low_confidence": false,
+      "reasons": [
+        "The bio explicitly establishes streetwear specialization, but provides no evidence of an Indian location or audience engagement.",
+        "Owned source: “Streetwear & Band Merch Designer”",
+        "Potential discovery match; not every condition in the brief is verified by available sources."
+      ],
+      "evidence": [
+        {
+          "text": "The bio explicitly establishes streetwear specialization, but provides no evidence of an Indian location or audience engagement.",
+          "provenance": "inferred",
+          "fact_id": null,
+          "source_post_id": null,
+          "evidence_quote": null
+        },
+        {
+          "text": "Owned source: “Streetwear & Band Merch Designer”",
+          "provenance": "inferred",
+          "fact_id": null,
+          "source_post_id": null,
+          "evidence_quote": null
+        },
+        {
+          "text": "Potential discovery match; not every condition in the brief is verified by available sources.",
+          "provenance": "inferred",
+          "fact_id": null,
+          "source_post_id": null,
+          "evidence_quote": null
+        }
+      ],
+      "ranking_source": "reranked"
+    },
+    "location_unverified": true
+  },
+  {
+    "creator": {
+      "id": "d293c302-0c65-41f9-8867-aa2457cc0f0c",
+      "name": "AART NYC",
+      "bio": "Shaquita Garcia, founder of AART NYC, is a New York City-based streetwear and hat designer known for her distinctive accessories. Her innovative designs, including the Camo Umbrella Hat and Traffic Cone Hat, have been featured in prominent publications like USA Today, Coveteur, and Upscale Magazine. She also operates under her personal brand @theemodernhousewifeny.",
+      "avatar_url": "https://pub-3370d4e4086448e68d392923ed3df2ce.r2.dev/aart_nyc/profile.webp"
+    },
+    "relevant_profile": {
+      "id": "e5885a0c-34a7-4860-a387-aebaa9de8c88",
+      "platform": "instagram",
+      "username": "aart_nyc",
+      "url": "https://instagram.com/aart_nyc",
+      "followers": 15349,
+      "engagement_rate": 4.69,
+      "is_verified": false,
+      "data_updated_at": "2026-06-18T07:02:56.973467+00:00"
+    },
+    "primary_profile": {
+      "id": "e5885a0c-34a7-4860-a387-aebaa9de8c88",
+      "platform": "instagram",
+      "username": "aart_nyc",
+      "url": "https://instagram.com/aart_nyc",
+      "followers": 15349,
+      "engagement_rate": 4.69,
+      "is_verified": false,
+      "data_updated_at": "2026-06-18T07:02:56.973467+00:00"
+    },
+    "match": {
+      "score": 0.57,
+      "confidence": 0.57,
+      "low_confidence": false,
+      "reasons": [
+        "The bio explicitly identifies a streetwear creator, but places the brand in NYC rather than India and provides no evidence of audience engagement.",
+        "Owned source: “NYC based Streetwear”",
+        "Potential discovery match; not every condition in the brief is verified by available sources."
+      ],
+      "evidence": [
+        {
+          "text": "The bio explicitly identifies a streetwear creator, but places the brand in NYC rather than India and provides no evidence of audience engagement.",
+          "provenance": "inferred",
+          "fact_id": null,
+          "source_post_id": null,
+          "evidence_quote": null
+        },
+        {
+          "text": "Owned source: “NYC based Streetwear”",
+          "provenance": "inferred",
+          "fact_id": null,
+          "source_post_id": null,
+          "evidence_quote": null
+        },
+        {
+          "text": "Potential discovery match; not every condition in the brief is verified by available sources.",
+          "provenance": "inferred",
+          "fact_id": null,
+          "source_post_id": null,
+          "evidence_quote": null
+        }
+      ],
+      "ranking_source": "reranked"
+    },
+    "location_unverified": true
+  },
+  {
+    "creator": {
+      "id": "fbbcd3a0-c70b-48cc-b1f9-2a4468ab8b70",
+      "name": "AttireSaint",
+      "bio": "Creator known by the handle @attiresaint with a focus on attire and style content. Limited public data available, but the username suggests expertise in fashion, clothing curation, or personal styling.",
+      "avatar_url": "https://pub-3370d4e4086448e68d392923ed3df2ce.r2.dev/attiresaint/profile.jpg"
+    },
+    "relevant_profile": {
+      "id": "62c06b01-d3cd-4cdb-991f-874205669fe1",
+      "platform": "instagram",
+      "username": "attiresaint",
+      "url": "https://instagram.com/attiresaint",
+      "followers": 384776,
+      "engagement_rate": 1.2,
+      "is_verified": false,
+      "data_updated_at": "2026-03-28T15:33:31.138+00:00"
+    },
+    "primary_profile": {
+      "id": "62c06b01-d3cd-4cdb-991f-874205669fe1",
+      "platform": "instagram",
+      "username": "attiresaint",
+      "url": "https://instagram.com/attiresaint",
+      "followers": 384776,
+      "engagement_rate": 1.2,
+      "is_verified": false,
+      "data_updated_at": "2026-03-28T15:33:31.138+00:00"
+    },
+    "match": {
+      "score": 0.55,
+      "confidence": 0.55,
+      "low_confidence": false,
+      "reasons": [
+        "The menswear and baggy-denim content is relevant to streetwear, but the sources do not establish an India connection or engaged audience.",
+        "Owned source: “colourful garment-dyed 578 baggy fit denim”",
+        "Owned source: “End of the week attire”",
+        "Potential discovery match; not every condition in the brief is verified by available sources."
+      ],
+      "evidence": [
+        {
+          "text": "The menswear and baggy-denim content is relevant to streetwear, but the sources do not establish an India connection or engaged audience.",
+          "provenance": "post_evidence",
+          "fact_id": "ee9e8500-a92c-4ec1-aa69-480689af3b85",
+          "source_post_id": "2d19f30d-583d-481c-8894-00cad711b56b",
+          "evidence_quote": null
+        },
+        {
+          "text": "Owned source: “colourful garment-dyed 578 baggy fit denim”",
+          "provenance": "post_evidence",
+          "fact_id": "ee9e8500-a92c-4ec1-aa69-480689af3b85",
+          "source_post_id": "2d19f30d-583d-481c-8894-00cad711b56b",
+          "evidence_quote": null
+        },
+        {
+          "text": "Owned source: “End of the week attire”",
+          "provenance": "post_evidence",
+          "fact_id": "ee9e8500-a92c-4ec1-aa69-480689af3b85",
+          "source_post_id": "0e1918df-ac7d-4dbd-b7ee-ec735caf2f9b",
+          "evidence_quote": null
+        },
+        {
+          "text": "Potential discovery match; not every condition in the brief is verified by available sources.",
+          "provenance": "inferred",
+          "fact_id": null,
+          "source_post_id": null,
+          "evidence_quote": null
+        }
+      ],
+      "ranking_source": "reranked"
+    },
+    "location_unverified": true
+  }
+]

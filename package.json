@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "phase0:spike": "node --experimental-strip-types --env-file=.env.local lib/phase-0/run-spike.mts"
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.152",

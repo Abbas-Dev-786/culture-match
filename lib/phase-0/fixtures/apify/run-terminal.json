@@ -1,0 +1,105 @@
+{
+  "id": "dbIdSXek8DRllcZPr",
+  "actId": "87nBtO3cwWMJv8Hbh",
+  "userId": "kj9e4Us5fZhb9hWv2",
+  "startedAt": "2026-10-22T16:55:19.621Z",
+  "finishedAt": "2026-10-22T16:55:29.665Z",
+  "status": "SUCCEEDED",
+  "meta": {
+    "origin": "API",
+    "userAgent": "node"
+  },
+  "stats": {
+    "inputBodyLen": 131,
+    "migrationCount": 0,
+    "rebootCount": 0,
+    "restartCount": 0,
+    "durationMillis": 9889,
+    "resurrectCount": 0,
+    "runTimeSecs": 9.889,
+    "metamorph": 0,
+    "computeUnits": 0.0027469444444444447,
+    "memAvgBytes": 48858672.70379198,
+    "memMaxBytes": 50536448,
+    "memCurrentBytes": 0,
+    "cpuAvgUsage": 6.408683114190781,
+    "cpuMaxUsage": 54.24775510204082,
+    "cpuCurrentUsage": 0,
+    "netRxBytes": 24660,
+    "netTxBytes": 11911
+  },
+  "options": {
+    "build": "latest",
+    "timeoutSecs": 300,
+    "memoryMbytes": 1024,
+    "maxTotalChargeUsd": 3.899986,
+    "maxItems": null,
+    "isMaxTotalChargeUsdSetByUser": false,
+    "diskMbytes": 2048
+  },
+  "buildId": "UcuCTW5lSK5FfEhfY",
+  "exitCode": 0,
+  "defaultKeyValueStoreId": "x3iA9YA3pLiNuJQaC",
+  "defaultDatasetId": "4ZkfiX1qjbgStaxPg",
+  "defaultRequestQueueId": "QepT3BpbLegzVn7qK",
+  "storageIds": {
+    "keyValueStores": {
+      "default": "x3iA9YA3pLiNuJQaC"
+    },
+    "datasets": {
+      "default": "4ZkfiX1qjbgStaxPg"
+    },
+    "requestQueues": {
+      "default": "QepT3BpbLegzVn7qK"
+    }
+  },
+  "pricingInfo": {
+    "pricingModel": "PAY_PER_EVENT",
+    "createdAt": "2026-03-09T19:56:01.293Z",
+    "startedAt": "2026-03-09T19:56:01.293Z",
+    "apifyMarginPercentage": 0.2,
+    "pricingPerEvent": {
+      "actorChargeEvents": {
+        "actor-start": {
+          "eventTitle": "Search started",
+          "eventDescription": "Charged once when the influencer search begins.",
+          "eventPriceUsd": 0.5
+        },
+        "creator-found": {
+          "eventTitle": "Creator found",
+          "eventDescription": "Charged for each influencer returned in search results.",
+          "eventPriceUsd": 0.05,
+          "isPrimaryEvent": true
+        }
+      }
+    }
+  },
+  "chargedEventCounts": {
+    "actor-start": 1,
+    "creator-found": 0
+  },
+  "platformUsageBillingModel": "DEVELOPER",
+  "accountedChargedEventCounts": {
+    "actor-start": 1,
+    "creator-found": 0
+  },
+  "standby": null,
+  "generalAccess": "FOLLOW_USER_SETTING",
+  "buildNumber": "0.0.5",
+  "containerUrl": "https://wtfsziczq44x.runs.apify.net",
+  "usageTotalUsd": 0.5,
+  "consoleUrl": "https://console.apify.com/view/runs/dbIdSXek8DRllcZPr",
+  "eventUsage": {
+    "actor-start": {
+      "eventTitle": "Search started",
+      "eventTotalUsd": 0.5
+    },
+    "creator-found": {
+      "eventTitle": "Creator found",
+      "eventTotalUsd": 0
+    }
+  },
+  "output": {
+    "results": "https://api.apify.com/v2/datasets/4ZkfiX1qjbgStaxPg/items?view=overview"
+  }
+}

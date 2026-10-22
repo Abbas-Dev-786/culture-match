@@ -1,0 +1,158 @@
+{
+  "success": true,
+  "results": {
+    "tags": [
+      {
+        "tag_id": "urn:tag:genre:qloo:hindi_cinema",
+        "name": "Hindi Cinema",
+        "types": [
+          "urn:entity:person"
+        ],
+        "subtype": "urn:tag:genre:qloo",
+        "tag_value": "urn:tag:genre:qloo:hindi_cinema",
+        "popularity": 0.9693220020286012,
+        "query": {
+          "affinity": 1
+        }
+      },
+      {
+        "tag_id": "urn:tag:genre:qloo:bollywood",
+        "name": "Bollywood",
+        "types": [
+          "urn:entity:artist",
+          "urn:entity:person",
+          "urn:entity:movie",
+          "urn:entity:tv_show"
+        ],
+        "subtype": "urn:tag:genre:qloo",
+        "tag_value": "urn:tag:genre:qloo:bollywood",
+        "popularity": 0.9953758763599474,
+        "query": {
+          "affinity": 0.999966
+        }
+      },
+      {
+        "tag_id": "urn:tag:genre:music:indian",
+        "name": "Indian",
+        "types": [
+          "urn:entity:artist"
+        ],
+        "subtype": "urn:tag:genre:music",
+        "tag_value": "urn:tag:genre:music:indian",
+        "popularity": 0.9980411447568891,
+        "query": {
+          "affinity": 0.999954
+        }
+      },
+      {
+        "tag_id": "urn:tag:genre:qloo:telugu_cinema",
+        "name": "Telugu Cinema",
+        "types": [
+          "urn:entity:person"
+        ],
+        "subtype": "urn:tag:genre:qloo",
+        "tag_value": "urn:tag:genre:qloo:telugu_cinema",
+        "popularity": 0.9659623375128005,
+        "query": {
+          "affinity": 0.999943
+        }
+      },
+      {
+        "tag_id": "urn:tag:genre:qloo:tamil_cinema",
+        "name": "Tamil Cinema",
+        "types": [
+          "urn:entity:person"
+        ],
+        "subtype": "urn:tag:genre:qloo",
+        "tag_value": "urn:tag:genre:qloo:tamil_cinema",
+        "popularity": 0.9650310565738444,
+        "query": {
+          "affinity": 0.99992
+        }
+      },
+      {
+        "tag_id": "urn:tag:genre:music:hindi",
+        "name": "Hindi",
+        "types": [
+          "urn:entity:artist"
+        ],
+        "subtype": "urn:tag:genre:music",
+        "tag_value": "urn:tag:genre:music:hindi",
+        "popularity": 0.9947300196372489,
+        "query": {
+          "affinity": 0.999885
+        }
+      },
+      {
+        "tag_id": "urn:tag:genre:qloo:indian_pop",
+        "name": "Indian Pop",
+        "types": [
+          "urn:entity:artist",
+          "urn:entity:person"
+        ],
+        "subtype": "urn:tag:genre:qloo",
+        "tag_value": "urn:tag:genre:qloo:indian_pop",
+        "popularity": 0.9901297729817155,
+        "query": {
+          "affinity": 0.999874
+        }
+      },
+      {
+        "tag_id": "urn:tag:genre:qloo:cricket",
+        "name": "Cricket",
+        "types": [
+          "urn:entity:person",
+          "urn:entity:tv_show",
+          "urn:entity:videogame"
+        ],
+        "subtype": "urn:tag:genre:qloo",
+        "tag_value": "urn:tag:genre:qloo:cricket",
+        "popularity": 0.9870875781087638,
+        "query": {
+          "affinity": 0.999851
+        }
+      },
+      {
+        "tag_id": "urn:tag:genre:qloo:hindi_films",
+        "name": "Hindi Films",
+        "types": [
+          "urn:entity:person"
+        ],
+        "subtype": "urn:tag:genre:qloo",
+        "tag_value": "urn:tag:genre:qloo:hindi_films",
+        "popularity": 0.9286770909601579,
+        "query": {
+          "affinity": 0.999839
+        }
+      },
+      {
+        "tag_id": "urn:tag:occupation:wikidata:cricketer",
+        "name": "cricketer",
+        "types": [
+          "urn:entity:person"
+        ],
+        "subtype": "urn:tag:occupation:wikidata",
+        "tag_value": "urn:tag:occupation:wikidata:cricketer",
+        "popularity": 0.9997584026171689,
+        "query": {
+          "affinity": 0.999805
+        }
+      }
+    ]
+  },
+  "query": {
+    "localities": {
+      "signal": {
+        "entity_id": "93CBAF56-B58C-4C4E-855E-8A5ACB71FD74",
+        "name": "India",
+        "subtype": "urn:entity:locality",
+        "location": {
+          "lat": 22.178967463346556,
+          "lon": 79.61459549715617
+        },
+        "popularity": 0.99999803,
+        "disambiguation": "India"
+      }
+    }
+  }
+}

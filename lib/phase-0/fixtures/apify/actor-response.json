@@ -1,0 +1,97 @@
+{
+  "data": {
+    "id": "87nBtO3cwWMJv8Hbh",
+    "userId": "4vuChBW87ImwgHenC",
+    "name": "influencer-search",
+    "username": "influship",
+    "description": "Search for Instagram influencers using natural language. Find creators by niche, location, audience size, engagement rate, and content style using AI-powered semantic search. Powered by Influship.",
+    "isPublic": true,
+    "createdAt": "2026-03-09T19:54:36.373Z",
+    "modifiedAt": "2026-08-04T21:08:25.204Z",
+    "taggedBuilds": {
+      "latest": {
+        "buildId": "UcuCTW5lSK5FfEhfY",
+        "finishedAt": "2026-08-04T21:08:25.204Z",
+        "buildNumberInt": 5,
+        "buildNumber": "0.0.5"
+      }
+    },
+    "stats": {
+      "totalBuilds": 5,
+      "totalRuns": 1169,
+      "totalUsers": 180,
+      "totalUsers7Days": 6,
+      "totalUsers30Days": 16,
+      "totalUsers90Days": 73,
+      "lastRunStartedAt": "2026-10-22T16:51:11.090Z",
+      "actorReviewCount": 1,
+      "actorReviewRating": 5,
+      "bookmarkCount": 7,
+      "publicActorRunStats30Days": {
+        "ABORTED": 0,
+        "FAILED": 0,
+        "SUCCEEDED": 77,
+        "TIMED-OUT": 0,
+        "TOTAL": 77
+      }
+    },
+    "versions": [
+      {
+        "versionNumber": "0.0",
+        "sourceType": "GIT_REPO",
+        "buildTag": "latest"
+      }
+    ],
+    "defaultRunOptions": {
+      "build": "latest",
+      "timeoutSecs": 300,
+      "memoryMbytes": 1024
+    },
+    "exampleRunInput": {
+      "body": "{ \"helloWorld\": 123 }",
+      "contentType": "application/json; charset=utf-8"
+    },
+    "categories": [
+      "SOCIAL_MEDIA",
+      "ECOMMERCE",
+      "AI"
+    ],
+    "isDeprecated": false,
+    "title": "Influencer Search — AI-Powered Discovery by Influship",
+    "pictureUrl": "https://apify-image-uploads-prod.s3.us-east-1.amazonaws.com/4vuChBW87ImwgHenC-actor-87nBtO3cwWMJv8Hbh-y2UmzhctlC-ChatGPT_Image_May_15__2026__10_30_51_AM.png",
+    "seoTitle": "Influencer Search API / MCP - AI Instagram Creator Discovery",
+    "seoDescription": "Find Instagram influencers with AI-powered natural language search. Filter by niche, location, audience size, and engagement. No login required.",
+    "pricingInfos": [
+      {
+        "pricingModel": "PAY_PER_EVENT",
+        "pricingPerEvent": {
+          "actorChargeEvents": {
+            "actor-start": {
+              "eventTitle": "Search started",
+              "eventDescription": "Charged once when the influencer search begins.",
+              "eventPriceUsd": 0.5
+            },
+            "creator-found": {
+              "eventTitle": "Creator found",
+              "eventDescription": "Charged for each influencer returned in search results.",
+              "eventPriceUsd": 0.05,
+              "isPrimaryEvent": true
+            }
+          }
+        },
+        "createdAt": "2026-03-09T19:56:01.293Z",
+        "startedAt": "2026-03-09T19:56:01.293Z",
+        "apifyMarginPercentage": 0.2
+      }
+    ],
+    "notice": "NONE",
+    "isCritical": false,
+    "isGeneric": false,
+    "hasNoDataset": false,
+    "isSourceCodeHidden": true,
+    "standbyUrl": null,
+    "actorPermissionLevel": "LIMITED_PERMISSIONS",
+    "readmeSummary": "## Influencer Search\n\nAn AI-powered semantic search Actor for creator discovery that accepts natural-language descriptions of desired influencers and returns ranked, relevance-scored creator profiles with AI-generated explanations. It performs semantic matching (not keyword-only) to find social media creators that align with campaign briefs, and returns rich profile metadata including follower counts, engagement rates (percent), posting frequency and growth metrics, verification status, platform and profile URLs, and a designation of each creator's primary and most relevant platform profile. The Actor supports metric-based filtering (follower and engagement ranges, verified status), platform filtering (Instagram supported; additional platforms planned), and paginated result sets (up to 100 results per run).\n\n## Use cases\n\n- Discover influencers that match plain-English campaign briefs (e.g., \"fitness influencers who post workout routines and promote healthy eating\").  \n- Find niche creators for brand campaigns using semantic relevance rather than strict taxonomy.  \n- Identify sustainable fashion creators with engaged audiences in a specific market.  \n- Filter and shortlist creators by follower range, engagement-rate thresholds, and verified status.  \n- Compare primary profile data with the profile most relevant to a specific query.  \n- Generate ranked candidate lists with relevance scores and AI-generated reasons for shortlisting.  \n- Collect audience and performance metrics (followers, engagement rate, posting cadence, growth) for influencer selection and campaign planning.  \n- Platform-specific influencer discovery (currently Instagram; expansion to additional platforms planned).",
+    "deploymentKey": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCsVy432OAInt8map51Z7bbjar4bEWP5q+d85+KJVYaRkXnzp0XZG0j/GPV1oCq/AqwvSDtFWMyfC2tkmvhTR4IvpaRLgkto5HMtnZWPDP+0x7xwKgckeLiqxnaoEyPi3FKi9ZZGWB1SiyYmABl2NzDNRywd3rc2va9WF8BKVW2uOOOHnLZDvJ557yujY4Bh2deyVF0JIkDllQMKW6Wr0axZICaFRkMXnQtEXdvKW35jqmTauuE57KkwhRSwL62LR3rYYEdwuayZuJox6JYg+5FPh1h7XI3UpjG79IxATpTgD9SCDF/Y17lN2SiHvX+70bEVyMkCBiky4pKcSiM/ov1 \n"
+  }
+}

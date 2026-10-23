@@ -184,15 +184,15 @@ The deterministic matching engine must remain usable if the model is unavailable
 
 ## Acceptance checklist
 
-- [ ] First market and category are selected.
-- [ ] Qloo entity resolution succeeds for at least one input.
-- [ ] Qloo location/taste request succeeds with documented parameters.
-- [ ] Apify actor accepts the selected input.
-- [ ] Apify run reaches a terminal state and dataset items are readable.
-- [ ] At least one creator can be normalized without guessed fields.
-- [ ] Score components are limited to fields supported by fixtures.
-- [ ] Workflow runtime and model provider are selected.
-- [ ] Supabase access model, RLS, and secret boundaries are documented.
+- [x] First market and category are selected.
+- [x] Qloo entity resolution succeeds for at least one input.
+- [x] Qloo location/taste request succeeds with documented parameters.
+- [x] Apify actor accepts the selected input.
+- [x] Apify run reaches a terminal state and dataset items are readable.
+- [x] At least one creator can be normalized without guessed fields.
+- [x] Score components are limited to fields supported by fixtures.
+- [x] Workflow runtime and model provider are selected.
+- [x] Supabase access model, RLS, and secret boundaries are documented.
 
 ## Risks and mitigations
 

@@ -1,8 +1,8 @@
 # Phase 0 decision log
 
-**Status:** Phase 0 live provider checks passed; manual contract review remains
+**Status:** Phase 0 complete; ready for Phase 1 implementation
 
-**Date:** 22 October 2026
+**Date:** 23 October 2026
 
 ## Scenario
 
@@ -46,17 +46,23 @@
 ## Model
 
 - Installed provider package: `@openrouter/ai-sdk-provider`.
-- Proposed MVP provider: OpenRouter with one pinned model ID supplied through server-only configuration.
+- MVP provider: OpenRouter with the pinned model `qwen/qwen3.8-27b:free`, configured by `OPENROUTER_MODEL`.
+- Model selection reason: the selected endpoint documents JSON-schema structured-output support, which matches the TDD requirement for schema-validated AI SDK output.
+- Model limitation: the free endpoint is rate-limited and must not receive confidential or personal data; model use remains optional.
 - The model is optional for Phase 0 and must not determine numeric scores.
 - Deterministic search and scoring fallbacks remain mandatory.
 - Structured output must use the installed AI SDK's Zod-backed `Output.object` API and a bounded step count.
+- Model budget: one bounded search-plan or report-generation call per workflow stage; no model calls for numeric score components.
 
 ## Supabase access mode
 
-- Phase 0 decision: public demonstration without user authentication.
+- Phase 0 decision: authenticated demonstration using the existing Supabase middleware.
+- Ownership field: `campaigns.user_id`, with owner-scoped policies based on `auth.uid()`.
 - Provider calls and campaign writes remain server-side.
-- Database tables must still use RLS; public access must not expose arbitrary campaign rows.
-- The scaffold currently uses the Supabase publishable-key variable. The migration plan must choose one current public-key convention and keep service/secret credentials server-only.
+- Every exposed table must use RLS; authenticated users may access only their own campaign rows and related records.
+- Browser and SSR clients use `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
+- `SUPABASE_SERVICE_ROLE_KEY` is reserved for explicitly privileged server-only operations; `DB_PASSWORD` is reserved for database administration/migrations.
+- The public-key convention is the current Supabase publishable key; no legacy anon-key variable is required.
 
 ## Retention and redaction
 
@@ -64,9 +70,9 @@
 - Raw provider payloads, if retained in the database later, require a short retention window and a deletion policy.
 - Logs must contain IDs, stages, durations, safe error codes, and counts—not credentials or complete provider payloads.
 
-## Unresolved items
+## Phase 1 handoff
 
-1. Final OpenRouter model ID and key naming before AI-assisted ranking is implemented.
-2. Supabase publishable-key versus legacy anon-key naming in the project documentation.
-
-The live provider feasibility gate is passed. The remaining items are implementation decisions for the next phase and do not invalidate the provider evidence captured here.
+- Provider feasibility gate: passed with sanitized Qloo and Apify fixtures.
+- Model provider and exact model ID: selected and recorded.
+- Supabase access mode, ownership field, RLS boundary, and secret boundary: selected and recorded.
+- Phase 1 must create the migrations and owner-scoped policies, then verify them with database tests and advisors before exposing application data.

@@ -50,6 +50,12 @@ QLOO_SEARCH_TAKE
 QLOO_INSIGHTS_FILTER_TYPE
 QLOO_INSIGHTS_LOCATION_QUERY
 QLOO_INSIGHTS_TAKE
+OPENROUTER_API_KEY
+OPENROUTER_MODEL
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+SUPABASE_SERVICE_ROLE_KEY
+DB_PASSWORD
 ```
 
 Run with the local environment file:
@@ -59,6 +65,10 @@ node --experimental-strip-types --env-file=.env.local lib/phase-0/run-spike.mts
 ```
 
 The runner writes only sanitized output to `lib/phase-0/fixtures/`, updates `provider-field-matrix.md`, and writes `fixtures/phase-0-run-summary.json`.
+
+The Phase 0 model decision is OpenRouter with `qwen/qwen3.8-27b:free`. It is used only for optional schema-validated planning/report text in later phases; deterministic matching and scoring must work without it. OpenRouter credentials remain server-side. The selected free endpoint is rate-limited and must not receive confidential or personal data.
+
+The Phase 0 Supabase decision is authenticated access with `campaigns.user_id` as the ownership field. The publishable key may be used by browser and SSR clients; service-role credentials, database passwords, and provider keys remain server-only. Every exposed table requires RLS and owner-scoped policies.
 
 ## Acceptance gate
 

@@ -480,16 +480,17 @@ supabase/
 QLOO_BASE_URL=https://hackathon.api.qloo.com
 QLOO_API_KEY=
 APIFY_API_TOKEN=
-AI_PROVIDER_API_KEY=
-AI_MODEL_ID=
+OPENROUTER_API_KEY=
+OPENROUTER_MODEL=qwen/qwen3.8-27b:free
 
 # Supabase
 NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
+DB_PASSWORD=
 ```
 
-`QLOO_BASE_URL` should be configured per the active hackathon instructions. Do not assume production Qloo base URL and hackathon base URL are interchangeable. Only public Supabase URL/anon key can use `NEXT_PUBLIC_`; API keys and service-role credentials must never have that prefix.
+`QLOO_BASE_URL` should be configured per the active hackathon instructions. Do not assume production Qloo base URL and hackathon base URL are interchangeable. Only the Supabase URL and publishable key use `NEXT_PUBLIC_`; provider keys, service-role credentials, and database passwords must never have that prefix.
 
 Store secrets in local `.env.local` (gitignored) and deploy provider secrets in Vercel Project Environment Variables. Never return secrets in API responses or include them in logs.
 

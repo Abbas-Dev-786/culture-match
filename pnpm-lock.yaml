@@ -77,9 +77,6 @@ importers:
       recharts:
         specifier: 3.8.0
         version: 3.8.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react-is@16.13.1)(react@19.3.0)(redux@5.0.1)
-      shadcn:
-        specifier: ^4.22.1
-        version: 4.22.1(supports-color@7.2.0)
       shiki:
         specifier: ^4.5.0
         version: 4.5.0
@@ -114,6 +111,9 @@ importers:
       prettier-plugin-tailwindcss:
         specifier: ^0.8.1
         version: 0.8.1(prettier@3.9.10)
+      shadcn:
+        specifier: ^4.22.1
+        version: 4.22.1(supports-color@7.2.0)
       tailwindcss:
         specifier: ^4
         version: 4.3.3

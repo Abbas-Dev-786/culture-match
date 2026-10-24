@@ -85,6 +85,49 @@ export async function getWorkflowContext(
   return { client, userId, campaign, run: result.data }
 }
 
+export async function getWorkflowContextByProviderRunId(
+  client: SupabaseClient<Database>,
+  providerRunId: string
+): Promise<WorkflowContext | undefined> {
+  const runResult = await client
+    .from("analysis_runs")
+    .select("*")
+    .eq("provider_run_id", providerRunId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (runResult.error) {
+    throw new ApplicationError(
+      "DATABASE_ERROR",
+      500,
+      "Unable to load the provider workflow"
+    )
+  }
+  if (!runResult.data) return undefined
+
+  const campaignResult = await client
+    .from("campaigns")
+    .select("*")
+    .eq("id", runResult.data.campaign_id)
+    .eq("user_id", runResult.data.user_id)
+    .maybeSingle()
+  if (campaignResult.error || !campaignResult.data) {
+    throw new ApplicationError(
+      "DATABASE_ERROR",
+      500,
+      "Unable to load the provider workflow campaign"
+    )
+  }
+
+  return {
+    client,
+    userId: runResult.data.user_id,
+    campaign: campaignResult.data,
+    run: runResult.data,
+  }
+}
+
 export async function transitionRunById(
   client: SupabaseClient<Database>,
   run: AnalysisRunRow,

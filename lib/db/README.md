@@ -14,7 +14,7 @@
 
 The repository instructions keep new files under `app/` and `lib/`, so the migration is stored under `lib/db/migrations/`. Apply its SQL through the Supabase migration workflow before exercising the API against the project.
 
-The schema uses authenticated owner-scoped RLS. Every table carries `user_id`, every child table has composite ownership foreign keys, and the service-role key is never used by the application data-access modules.
+The schema uses authenticated owner-scoped RLS. Every table carries `user_id`, every child table has composite ownership foreign keys, and normal user-facing data access uses the publishable client with RLS. The production Apify webhook is a separately authenticated internal route and uses the service-role client only after validating its bearer secret.
 
 After applying the migration, verify the following with the Supabase CLI or MCP:
 

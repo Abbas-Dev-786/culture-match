@@ -13,6 +13,7 @@ import {
   failAnalysisRunById,
   claimProviderStart,
   getWorkflowContext,
+  getWorkflowContextByProviderRunId,
   transitionRunById,
   updateRunDatasetId,
   updateRunProviderIds,
@@ -30,34 +31,61 @@ import {
   type SearchPlan,
 } from "@/lib/workflow/search-plan"
 import { generateModelSearchPlan } from "@/lib/workflow/search-plan-model"
+import { createServiceRoleClient } from "@/lib/server-admin"
+import type { WorkflowContext } from "@/lib/db/runs"
+import { isApplicationError } from "@/lib/errors"
 
 const activeCampaigns = new Set<string>()
 
 export async function runCampaignAnalysis(
   campaignId: string
 ): Promise<AnalysisRunRow> {
-  if (activeCampaigns.has(campaignId))
-    return (await getWorkflowContext(campaignId)).run
+  const context = await getWorkflowContext(campaignId)
+  return executeWorkflow(context, () => getWorkflowContext(campaignId))
+}
+
+export async function runCampaignAnalysisForProviderRun(
+  providerRunId: string
+): Promise<AnalysisRunRow | undefined> {
+  const client = createServiceRoleClient()
+  const context = await getWorkflowContextByProviderRunId(client, providerRunId)
+  if (!context) return undefined
+  try {
+    return await executeWorkflow(
+      context,
+      () => getWorkflowContextByProviderRunId(client, providerRunId)
+    )
+  } catch (error) {
+    if (!isApplicationError(error) || error.code !== "WORKFLOW_CONFLICT")
+      throw error
+    const latest = await getWorkflowContextByProviderRunId(client, providerRunId)
+    return latest?.run ?? context.run
+  }
+}
+
+async function executeWorkflow(
+  context: WorkflowContext,
+  refreshContext: () => Promise<WorkflowContext | undefined>
+): Promise<AnalysisRunRow> {
+  const campaignId = context.campaign.id
+  if (activeCampaigns.has(campaignId)) return context.run
   activeCampaigns.add(campaignId)
   try {
-    const context = await getWorkflowContext(campaignId)
-    try {
-      return await advanceWorkflow(
-        context.campaign,
-        context.run,
-        context.client,
-        context.userId
-      )
-    } catch (error) {
-      if (!(error instanceof ProviderError)) throw error
-      const latest = await getWorkflowContext(campaignId)
-      return failAnalysisRunById(
-        latest.client,
-        latest.run,
-        error.code,
-        error.message
-      )
-    }
+    return await advanceWorkflow(
+      context.campaign,
+      context.run,
+      context.client,
+      context.userId
+    )
+  } catch (error) {
+    if (!(error instanceof ProviderError)) throw error
+    const latest = (await refreshContext()) ?? context
+    return failAnalysisRunById(
+      latest.client,
+      latest.run,
+      error.code,
+      error.message
+    )
   } finally {
     activeCampaigns.delete(campaignId)
   }

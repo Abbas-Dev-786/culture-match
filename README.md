@@ -19,3 +19,14 @@ To use the components in your app, import them as follows:
 ```tsx
 import { Button } from "@/components/ui/button";
 ```
+
+In Apify, configure the webhook URL:
+
+https://your-domain.com/api/internal/apify/webhook
+
+Use these events:
+
+ACTOR.RUN.SUCCEEDED
+ACTOR.RUN.FAILED
+ACTOR.RUN.ABORTED
+ACTOR.RUN.TIMED_OUT

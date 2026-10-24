@@ -9,8 +9,10 @@
 5. Poll one Apify status per advancement request. Dataset items are loaded only after `SUCCEEDED`.
 6. Persist normalized creators and hand the run to the `scoring` stage.
 
-`GET /api/campaigns/:id/status` only reads persisted state. In development, `POST /api/campaigns/:id/advance` advances one bounded step so a local process can recover a run without exposing provider calls to the browser. The production handoff point is the persisted `searching_creators` run and should be driven by a trusted scheduler or provider webhook.
+`GET /api/campaigns/:id/status` only reads persisted state. In development, `POST /api/campaigns/:id/advance` advances one bounded step so a local process can recover a run without exposing provider calls to the browser. In production, Apify sends terminal run events to `POST /api/internal/apify/webhook`; the route authenticates the request, finds the persisted provider run, and advances exactly one workflow step. Duplicate webhook deliveries are safe because the workflow and database transitions are guarded.
 
 The workflow keeps deterministic search planning as the fallback. Model planning is opt-in with `ENABLE_MODEL_SEARCH_PLAN=true`, and its output is validated against the actor schema and campaign constraints before it can be used. Result counts, Apify run timeout, maximum charge, retry elapsed time, and total analysis runtime are server-enforced.
 
 Provider secrets are read only in server modules. Raw provider payloads are not retained unless `PROVIDER_RETAIN_RAW=true`; retained payloads receive a short expiry timestamp.
+
+Configure the Apify webhook for the deployed URL with `ACTOR.RUN.SUCCEEDED`, `ACTOR.RUN.FAILED`, `ACTOR.RUN.ABORTED`, and `ACTOR.RUN.TIMED_OUT`. Set its `Authorization` header to `Bearer <APIFY_WEBHOOK_SECRET>` and leave the default event payload enabled. Store the same secret only in Apify and the deployment environment.

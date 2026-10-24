@@ -35,7 +35,8 @@ export type CampaignStatus =
   | "failed"
   | "cancelled"
 
-export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled"
+export type RunStatus =
+  "queued" | "running" | "completed" | "failed" | "cancelled"
 
 export type WorkflowStage =
   | "queued"
@@ -75,6 +76,7 @@ export interface NormalizedCreator {
   engagementRate?: number
   isVerified?: boolean
   locationUnverified?: boolean
+  providerMatchScore?: number
   evidence: EvidenceRef[]
 }
 
@@ -122,6 +124,8 @@ export interface SafeAnalysisRun {
   queuedAt: string
   startedAt?: string
   completedAt?: string
+  stageMessage: string
+  retryAvailable: boolean
   createdAt: string
   updatedAt: string
 }

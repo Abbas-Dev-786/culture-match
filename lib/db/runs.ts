@@ -8,9 +8,18 @@ import {
   transitionWorkflow,
 } from "@/lib/workflow/state-machine"
 import type { WorkflowStage } from "@/lib/domain/types"
+import type { SupabaseClient } from "@supabase/supabase-js"
+import type { Database } from "@/lib/db/database.types"
+
+export interface WorkflowContext {
+  client: SupabaseClient<Database>
+  userId: string
+  campaign: Awaited<ReturnType<typeof getOwnedCampaign>>["campaign"]
+  run: AnalysisRunRow
+}
 
 export async function getLatestRunForCampaign(
-  campaignId: string,
+  campaignId: string
 ): Promise<{ run: AnalysisRunRow; campaignId: string }> {
   const { client, userId } = await getOwnedCampaign(campaignId)
   const result = await client
@@ -23,7 +32,11 @@ export async function getLatestRunForCampaign(
     .maybeSingle()
 
   if (result.error || !result.data) {
-    throw new ApplicationError("ANALYSIS_RUN_NOT_FOUND", 404, "Analysis run was not found")
+    throw new ApplicationError(
+      "ANALYSIS_RUN_NOT_FOUND",
+      404,
+      "Analysis run was not found"
+    )
   }
 
   return { run: result.data, campaignId }
@@ -39,15 +52,216 @@ export async function getRunById(runId: string): Promise<AnalysisRunRow> {
     .maybeSingle()
 
   if (result.error || !result.data) {
-    throw new ApplicationError("ANALYSIS_RUN_NOT_FOUND", 404, "Analysis run was not found")
+    throw new ApplicationError(
+      "ANALYSIS_RUN_NOT_FOUND",
+      404,
+      "Analysis run was not found"
+    )
   }
 
   return result.data
 }
 
+export async function getWorkflowContext(
+  campaignId: string
+): Promise<WorkflowContext> {
+  const { client, userId, campaign } = await getOwnedCampaign(campaignId)
+  const result = await client
+    .from("analysis_runs")
+    .select("*")
+    .eq("campaign_id", campaignId)
+    .eq("user_id", userId)
+    .order("attempt", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (result.error || !result.data) {
+    throw new ApplicationError(
+      "ANALYSIS_RUN_NOT_FOUND",
+      404,
+      "Analysis run was not found"
+    )
+  }
+  return { client, userId, campaign, run: result.data }
+}
+
+export async function transitionRunById(
+  client: SupabaseClient<Database>,
+  run: AnalysisRunRow,
+  nextStage: WorkflowStage
+): Promise<AnalysisRunRow> {
+  const next = transitionWorkflow(
+    { status: run.status, stage: run.stage },
+    nextStage
+  )
+  const result = await client
+    .from("analysis_runs")
+    .update({
+      status: next.status,
+      stage: next.stage,
+      started_at: run.started_at ?? new Date().toISOString(),
+    })
+    .eq("id", run.id)
+    .eq("user_id", run.user_id)
+    .eq("status", run.status)
+    .eq("stage", run.stage)
+    .select("*")
+    .maybeSingle()
+  if (result.error || !result.data) {
+    throw new ApplicationError(
+      "WORKFLOW_CONFLICT",
+      409,
+      "The analysis run changed before it could advance"
+    )
+  }
+  const campaignStatus = campaignStatusForRunState(next)
+  await client
+    .from("campaigns")
+    .update({ status: campaignStatus })
+    .eq("id", run.campaign_id)
+    .eq("user_id", run.user_id)
+  return result.data
+}
+
+export async function updateRunProviderIds(
+  client: SupabaseClient<Database>,
+  run: AnalysisRunRow,
+  providerRunId: string,
+  providerDatasetId: string | undefined,
+  claimToken: string
+): Promise<AnalysisRunRow> {
+  const result = await client
+    .from("analysis_runs")
+    .update({
+      provider_run_id: providerRunId,
+      ...(providerDatasetId ? { provider_dataset_id: providerDatasetId } : {}),
+      provider_start_claim_token: null,
+      provider_start_claimed_until: null,
+    })
+    .eq("id", run.id)
+    .eq("user_id", run.user_id)
+    .eq("provider_start_claim_token", claimToken)
+    .is("provider_run_id", null)
+    .select("*")
+    .maybeSingle()
+  if (result.error || !result.data) {
+    const existing = await client
+      .from("analysis_runs")
+      .select("*")
+      .eq("id", run.id)
+      .eq("user_id", run.user_id)
+      .maybeSingle()
+    if (!existing.data || !existing.data.provider_run_id)
+      throw new ApplicationError(
+        "WORKFLOW_CONFLICT",
+        409,
+        "The provider run could not be persisted safely"
+      )
+    return existing.data
+  }
+  return result.data
+}
+
+export async function claimProviderStart(
+  client: SupabaseClient<Database>,
+  run: AnalysisRunRow
+): Promise<{ run: AnalysisRunRow; claimToken: string } | undefined> {
+  const claimToken = crypto.randomUUID()
+  const now = new Date().toISOString()
+  const claimedUntil = new Date(
+    Date.now() + readProviderStartLeaseMs()
+  ).toISOString()
+  const result = await client
+    .from("analysis_runs")
+    .update({
+      provider_start_claim_token: claimToken,
+      provider_start_claimed_until: claimedUntil,
+    })
+    .eq("id", run.id)
+    .eq("user_id", run.user_id)
+    .is("provider_run_id", null)
+    .or(
+      `provider_start_claimed_until.is.null,provider_start_claimed_until.lt.${now}`
+    )
+    .select("*")
+    .maybeSingle()
+
+  if (result.error)
+    throw new ApplicationError(
+      "DATABASE_ERROR",
+      500,
+      "Unable to claim the provider start"
+    )
+  if (!result.data) return undefined
+  return { run: result.data, claimToken }
+}
+
+export async function updateRunDatasetId(
+  client: SupabaseClient<Database>,
+  run: AnalysisRunRow,
+  providerDatasetId: string
+): Promise<AnalysisRunRow> {
+  const result = await client
+    .from("analysis_runs")
+    .update({ provider_dataset_id: providerDatasetId })
+    .eq("id", run.id)
+    .eq("user_id", run.user_id)
+    .select("*")
+    .single()
+  if (result.error || !result.data)
+    throw new ApplicationError(
+      "DATABASE_ERROR",
+      500,
+      "Unable to persist the provider dataset"
+    )
+  return result.data
+}
+
+export async function failAnalysisRunById(
+  client: SupabaseClient<Database>,
+  run: AnalysisRunRow,
+  errorCode: string,
+  errorMessage: string
+): Promise<AnalysisRunRow> {
+  const next = failWorkflow({ status: run.status, stage: run.stage })
+  const result = await client
+    .from("analysis_runs")
+    .update({
+      status: next.status,
+      error_code: errorCode.replace(/[^A-Z0-9_]/g, "_").slice(0, 80),
+      error_message: errorMessage.replace(/\s+/g, " ").trim().slice(0, 500),
+      completed_at: new Date().toISOString(),
+      provider_start_claim_token: null,
+      provider_start_claimed_until: null,
+    })
+    .eq("id", run.id)
+    .eq("user_id", run.user_id)
+    .in("status", ["queued", "running"])
+    .select("*")
+    .maybeSingle()
+  if (result.error || !result.data) {
+    throw new ApplicationError(
+      "WORKFLOW_CONFLICT",
+      409,
+      "The analysis run changed before it could fail"
+    )
+  }
+  await client
+    .from("campaigns")
+    .update({ status: campaignStatusForRunState(next) })
+    .eq("id", run.campaign_id)
+    .eq("user_id", run.user_id)
+  return result.data
+}
+
+function readProviderStartLeaseMs(): number {
+  const value = Number(process.env.APIFY_START_LEASE_MS)
+  return Number.isInteger(value) && value >= 30_000 ? value : 120_000
+}
+
 export async function advanceAnalysisRun(
   campaignId: string,
-  nextStage: WorkflowStage,
+  nextStage: WorkflowStage
 ): Promise<AnalysisRunRow> {
   const { client, userId } = await getOwnedCampaign(campaignId)
   const latest = await client
@@ -60,13 +274,17 @@ export async function advanceAnalysisRun(
     .maybeSingle()
 
   if (latest.error || !latest.data) {
-    throw new ApplicationError("ANALYSIS_RUN_NOT_FOUND", 404, "Analysis run was not found")
+    throw new ApplicationError(
+      "ANALYSIS_RUN_NOT_FOUND",
+      404,
+      "Analysis run was not found"
+    )
   }
 
   const current = latest.data
   const next = transitionWorkflow(
     { status: current.status, stage: current.stage },
-    nextStage,
+    nextStage
   )
   const now = new Date().toISOString()
   const result = await client
@@ -84,7 +302,11 @@ export async function advanceAnalysisRun(
     .maybeSingle()
 
   if (result.error || !result.data) {
-    throw new ApplicationError("WORKFLOW_CONFLICT", 409, "The analysis run changed before it could advance")
+    throw new ApplicationError(
+      "WORKFLOW_CONFLICT",
+      409,
+      "The analysis run changed before it could advance"
+    )
   }
 
   await client
@@ -96,7 +318,9 @@ export async function advanceAnalysisRun(
   return result.data
 }
 
-export async function createRetryRun(campaignId: string): Promise<AnalysisRunRow> {
+export async function createRetryRun(
+  campaignId: string
+): Promise<AnalysisRunRow> {
   const { client, userId } = await getOwnedCampaign(campaignId)
   const latest = await client
     .from("analysis_runs")
@@ -108,11 +332,30 @@ export async function createRetryRun(campaignId: string): Promise<AnalysisRunRow
     .maybeSingle()
 
   if (latest.error || !latest.data) {
-    throw new ApplicationError("ANALYSIS_RUN_NOT_FOUND", 404, "Analysis run was not found")
+    throw new ApplicationError(
+      "ANALYSIS_RUN_NOT_FOUND",
+      404,
+      "Analysis run was not found"
+    )
   }
 
   if (latest.data.status !== "failed") {
-    throw new ApplicationError("RETRY_NOT_ALLOWED", 409, "Only failed analysis runs can be retried")
+    throw new ApplicationError(
+      "RETRY_NOT_ALLOWED",
+      409,
+      "Only failed analysis runs can be retried"
+    )
+  }
+
+  const maxAttempts = Number(process.env.MAX_ANALYSIS_ATTEMPTS)
+  const attemptLimit =
+    Number.isInteger(maxAttempts) && maxAttempts > 0 ? maxAttempts : 3
+  if (latest.data.attempt >= attemptLimit) {
+    throw new ApplicationError(
+      "RETRY_LIMIT_REACHED",
+      409,
+      "The analysis retry limit has been reached"
+    )
   }
 
   const attempt = latest.data.attempt + 1
@@ -124,7 +367,11 @@ export async function createRetryRun(campaignId: string): Promise<AnalysisRunRow
     status: "queued",
     stage: "queued",
   }
-  const result = await client.from("analysis_runs").insert(insert).select("*").single()
+  const result = await client
+    .from("analysis_runs")
+    .insert(insert)
+    .select("*")
+    .single()
 
   if (result.error || !result.data) {
     if (isUniqueViolation(result.error)) {
@@ -136,7 +383,11 @@ export async function createRetryRun(campaignId: string): Promise<AnalysisRunRow
         .single()
       if (!existing.error && existing.data) return existing.data
     }
-    throw new ApplicationError("DATABASE_ERROR", 500, "Unable to create retry run")
+    throw new ApplicationError(
+      "DATABASE_ERROR",
+      500,
+      "Unable to create retry run"
+    )
   }
 
   await client
@@ -151,7 +402,7 @@ export async function createRetryRun(campaignId: string): Promise<AnalysisRunRow
 export async function failAnalysisRun(
   campaignId: string,
   errorCode: string,
-  errorMessage: string,
+  errorMessage: string
 ): Promise<AnalysisRunRow> {
   const { client, userId } = await getOwnedCampaign(campaignId)
   const latest = await client
@@ -164,7 +415,11 @@ export async function failAnalysisRun(
     .maybeSingle()
 
   if (latest.error || !latest.data) {
-    throw new ApplicationError("ANALYSIS_RUN_NOT_FOUND", 404, "Analysis run was not found")
+    throw new ApplicationError(
+      "ANALYSIS_RUN_NOT_FOUND",
+      404,
+      "Analysis run was not found"
+    )
   }
 
   const current = latest.data
@@ -176,6 +431,8 @@ export async function failAnalysisRun(
       error_code: errorCode.replace(/[^A-Z0-9_]/g, "_").slice(0, 80),
       error_message: errorMessage.replace(/\s+/g, " ").trim().slice(0, 500),
       completed_at: new Date().toISOString(),
+      provider_start_claim_token: null,
+      provider_start_claimed_until: null,
     })
     .eq("id", current.id)
     .eq("user_id", userId)
@@ -184,7 +441,11 @@ export async function failAnalysisRun(
     .maybeSingle()
 
   if (result.error || !result.data) {
-    throw new ApplicationError("WORKFLOW_CONFLICT", 409, "The analysis run changed before it could fail")
+    throw new ApplicationError(
+      "WORKFLOW_CONFLICT",
+      409,
+      "The analysis run changed before it could fail"
+    )
   }
 
   await client

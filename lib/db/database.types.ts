@@ -64,6 +64,8 @@ export type AnalysisRunRow = {
   stage: WorkflowStage
   provider_run_id: string | null
   provider_dataset_id: string | null
+  provider_start_claim_token: string | null
+  provider_start_claimed_until: string | null
   score_algorithm_version: string
   error_code: string | null
   error_message: string | null
@@ -84,6 +86,8 @@ export type AnalysisRunInsert = {
   stage?: WorkflowStage
   provider_run_id?: string | null
   provider_dataset_id?: string | null
+  provider_start_claim_token?: string | null
+  provider_start_claimed_until?: string | null
   score_algorithm_version?: string
   error_code?: string | null
   error_message?: string | null

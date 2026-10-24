@@ -30,3 +30,13 @@ test("security hardening migration does not expose the RLS event trigger", async
 
   assert.match(sql, /revoke execute on function public\.rls_auto_enable\(\) from public, anon, authenticated;/)
 })
+
+test("workflow guards migration adds durable provider-start claims and FK indexes", async () => {
+  const workflowMigrationPath = new URL("./migrations/0003_workflow_guards.sql", import.meta.url)
+  const sql = await readFile(workflowMigrationPath, "utf8")
+
+  assert.match(sql, /provider_start_claim_token text/)
+  assert.match(sql, /provider_start_claimed_until timestamptz/)
+  assert.match(sql, /analysis_runs_provider_start_claim_idx/)
+  assert.match(sql, /creator_matches_candidate_user_fk_idx/)
+})

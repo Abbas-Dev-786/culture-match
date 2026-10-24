@@ -5,13 +5,33 @@ import Link from "next/link"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 
 interface CampaignStatusResponse {
-  campaign?: { id: string; brandName: string; productCategory: string; objective: string; status: string }
-  run?: { id: string; attempt: number; status: string; stage: string; createdAt: string }
+  campaign?: {
+    id: string
+    brandName: string
+    productCategory: string
+    objective: string
+    status: string
+  }
+  run?: {
+    id: string
+    attempt: number
+    status: string
+    stage: string
+    stageMessage?: string
+    retryAvailable?: boolean
+    createdAt: string
+  }
   error?: { message: string }
 }
 
@@ -31,7 +51,9 @@ export function CampaignView({ campaignId }: CampaignViewProps) {
 
     async function loadStatus(): Promise<void> {
       try {
-        const response = await fetch(`/api/campaigns/${campaignId}/status`, { cache: "no-store" })
+        const response = await fetch(`/api/campaigns/${campaignId}/status`, {
+          cache: "no-store",
+        })
         const body = (await response.json()) as CampaignStatusResponse
         if (!active) return
         if (!response.ok) {
@@ -48,19 +70,29 @@ export function CampaignView({ campaignId }: CampaignViewProps) {
     }
 
     void loadStatus()
-    const interval = window.setInterval(() => void loadStatus(), 5000)
+    const interval = window.setInterval(() => {
+      if (
+        process.env.NODE_ENV === "development" &&
+        data?.run?.status === "running"
+      ) {
+        void fetch(`/api/campaigns/${campaignId}/advance`, { method: "POST" })
+      }
+      void loadStatus()
+    }, 5000)
     return () => {
       active = false
       window.clearInterval(interval)
     }
-  }, [campaignId])
+  }, [campaignId, data?.run?.status])
 
   async function runAction(action: "analyze" | "retry"): Promise<void> {
     setIsMutating(true)
     setActionMessage(undefined)
 
     try {
-      const response = await fetch(`/api/campaigns/${campaignId}/${action}`, { method: "POST" })
+      const response = await fetch(`/api/campaigns/${campaignId}/${action}`, {
+        method: "POST",
+      })
       const body = (await response.json()) as CampaignStatusResponse
       if (!response.ok) {
         setActionMessage(body.error?.message ?? "Unable to update the campaign")
@@ -75,7 +107,8 @@ export function CampaignView({ campaignId }: CampaignViewProps) {
   }
 
   const showStartAction = data?.run?.status === "queued"
-  const showRetryAction = data?.run?.status === "failed"
+  const showRetryAction =
+    data?.run?.status === "failed" && data.run.retryAvailable !== false
 
   return (
     <main className="min-h-svh bg-muted/30 p-6 md:p-10">
@@ -83,9 +116,13 @@ export function CampaignView({ campaignId }: CampaignViewProps) {
         <div className="mb-8 flex items-center justify-between gap-4">
           <div>
             <p className="text-sm text-muted-foreground">Campaign status</p>
-            <h1 className="font-heading text-3xl font-semibold tracking-tight">{data?.campaign?.brandName ?? "Campaign"}</h1>
+            <h1 className="font-heading text-3xl font-semibold tracking-tight">
+              {data?.campaign?.brandName ?? "Campaign"}
+            </h1>
           </div>
-          <Button variant="ghost" render={<Link href="/campaigns/new" />}>New campaign</Button>
+          <Button variant="ghost" render={<Link href="/campaigns/new" />}>
+            New campaign
+          </Button>
         </div>
         {error ? (
           <Alert variant="destructive">
@@ -103,26 +140,88 @@ export function CampaignView({ campaignId }: CampaignViewProps) {
               <CardHeader>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <CardTitle>{data?.campaign?.productCategory ?? "Campaign"}</CardTitle>
-                    <CardDescription>{data?.campaign?.objective ?? "Saved campaign brief"}</CardDescription>
+                    <CardTitle>
+                      {data?.campaign?.productCategory ?? "Campaign"}
+                    </CardTitle>
+                    <CardDescription>
+                      {data?.campaign?.objective ?? "Saved campaign brief"}
+                    </CardDescription>
                   </div>
-                  <Badge variant="outline">{data?.campaign?.status ?? "unknown"}</Badge>
+                  <Badge variant="outline">
+                    {data?.campaign?.status ?? "unknown"}
+                  </Badge>
                 </div>
               </CardHeader>
               <CardContent className="grid gap-5">
                 <dl className="grid gap-4 text-sm sm:grid-cols-3">
-                  <div><dt className="text-muted-foreground">Run attempt</dt><dd className="font-medium">{data?.run?.attempt ?? "—"}</dd></div>
-                  <div><dt className="text-muted-foreground">Stage</dt><dd className="font-medium">{data?.run?.stage ?? "—"}</dd></div>
-                  <div><dt className="text-muted-foreground">Run status</dt><dd className="font-medium">{data?.run?.status ?? "—"}</dd></div>
+                  <div>
+                    <dt className="text-muted-foreground">Run attempt</dt>
+                    <dd className="font-medium">{data?.run?.attempt ?? "-"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Stage</dt>
+                    <dd className="font-medium">{data?.run?.stage ?? "-"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Run status</dt>
+                    <dd className="font-medium">{data?.run?.status ?? "-"}</dd>
+                  </div>
                 </dl>
-                {showStartAction ? <Button className="w-fit" onClick={() => void runAction("analyze")} disabled={isMutating}>{isMutating ? <><Spinner /> Starting…</> : "Start analysis"}</Button> : null}
-                {showRetryAction ? <Button className="w-fit" onClick={() => void runAction("retry")} disabled={isMutating}>{isMutating ? <><Spinner /> Retrying…</> : "Retry analysis"}</Button> : null}
-                {actionMessage ? <Alert variant="destructive"><AlertDescription>{actionMessage}</AlertDescription></Alert> : null}
+                {data?.run?.stageMessage ? (
+                  <p className="text-sm text-muted-foreground">
+                    {data.run.stageMessage}
+                  </p>
+                ) : null}
+                {showStartAction ? (
+                  <Button
+                    className="w-fit"
+                    onClick={() => void runAction("analyze")}
+                    disabled={isMutating}
+                  >
+                    {isMutating ? (
+                      <>
+                        <Spinner /> Starting...
+                      </>
+                    ) : (
+                      "Start analysis"
+                    )}
+                  </Button>
+                ) : null}
+                {showRetryAction ? (
+                  <Button
+                    className="w-fit"
+                    onClick={() => void runAction("retry")}
+                    disabled={isMutating}
+                  >
+                    {isMutating ? (
+                      <>
+                        <Spinner /> Retrying...
+                      </>
+                    ) : (
+                      "Retry analysis"
+                    )}
+                  </Button>
+                ) : null}
+                {actionMessage ? (
+                  <Alert variant="destructive">
+                    <AlertDescription>{actionMessage}</AlertDescription>
+                  </Alert>
+                ) : null}
               </CardContent>
             </Card>
             <Card>
-              <CardHeader><CardTitle>Results</CardTitle><CardDescription>Provider workflow results will appear here in the next phase.</CardDescription></CardHeader>
-              <CardContent><p className="text-sm text-muted-foreground">The foundation persists the campaign and refreshes its status without starting external providers.</p></CardContent>
+              <CardHeader>
+                <CardTitle>Results</CardTitle>
+                <CardDescription>
+                  Provider workflow results will appear here in the next phase.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  Qloo culture research and the Apify creator search advance in
+                  bounded, resumable workflow steps.
+                </p>
+              </CardContent>
             </Card>
           </div>
         )}

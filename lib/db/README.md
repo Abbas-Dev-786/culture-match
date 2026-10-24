@@ -10,6 +10,8 @@
 
 `migrations/0002_security_hardening.sql` removes public execution privileges from the existing `public.rls_auto_enable()` event-trigger function.
 
+`migrations/0003_workflow_guards.sql` adds durable provider-start leases and indexes the composite foreign keys used by the workflow tables.
+
 The repository instructions keep new files under `app/` and `lib/`, so the migration is stored under `lib/db/migrations/`. Apply its SQL through the Supabase migration workflow before exercising the API against the project.
 
 The schema uses authenticated owner-scoped RLS. Every table carries `user_id`, every child table has composite ownership foreign keys, and the service-role key is never used by the application data-access modules.

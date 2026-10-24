@@ -3,12 +3,14 @@ import type {
   CultureSignal,
   JsonObject,
   QlooFingerprint,
+  QlooFingerprintGroup,
+  QlooHeatmap,
+  QlooComparisonSummary,
   QlooSignalRecord,
 } from "../../domain/types.ts"
 import { ProviderError } from "../provider-errors.ts"
 import type { QlooClient } from "./client.ts"
 import {
-  entitySignals,
   resolveEntities,
   type ResolvedEntity,
 } from "./resolve-entities.ts"
@@ -38,38 +40,43 @@ export async function analyzeCulture(
     client,
     observedAt
   )
-  const resolvedTags = await resolveTags(
+  const resolvedTags = await resolveTagsWithFallback(
     [brief.productCategory],
     client,
     observedAt
   )
   const locationQuery = buildLocationQuery(brief)
-  const payload = await client.getInsights({
-    filterType: "urn:tag",
+  const layers = await loadFingerprintLayers(
+    brief,
     locationQuery,
-    entitySignals: resolvedReferences.flatMap((entity) =>
-      entity.status === "resolved" && entity.entityId
-        ? [
-            {
-              entity: entity.entityId,
-              weight: entity.reference === brief.brandName ? 30 : 20,
-            },
-          ]
-        : []
-    ),
-    tagSignals: resolvedTags.flatMap((tag) =>
-      tag.status === "resolved" && tag.tagId
-        ? [{ tag: tag.tagId, weight: 15 }]
-        : []
-    ),
-    tagOperator: "intersection",
-    take: readTake(),
-    explainability: true,
-  })
-  const parsed = parseTasteResponse(payload, observedAt)
-  const signals = [...entitySignals(resolvedReferences), ...parsed.signals]
+    resolvedReferences,
+    resolvedTags,
+    client,
+    observedAt
+  )
+  const combinedLayer = layers.find((layer) => layer.group === "combined")
+  const marketLayer = layers.find((layer) => layer.group === "market")
+  const primaryLayer = combinedLayer ?? marketLayer
+  const inputEntitySignals = layers
+    .filter((layer) => layer.group === "brand" || layer.group === "reference")
+    .flatMap((layer) =>
+      layer.signals.filter((signal) => signal.kind === "entity")
+    )
+  const returnedMarketSignals =
+    marketLayer?.signals.filter(
+      (signal) => signal.evidence.fieldPath === "$.results.tags[]"
+    ) ?? []
+  const signalRecords = dedupeSignals(
+    [...inputEntitySignals, ...returnedMarketSignals]
+  )
+  const signals = signalRecords.map(recordToCultureSignal)
 
-  if (parsed.signals.length === 0) {
+  if (
+    !primaryLayer ||
+    !primaryLayer.signals.some(
+      (signal) => signal.evidence.fieldPath === "$.results.tags[]"
+    )
+  ) {
     throw new ProviderError({
       provider: "qloo",
       code: "EMPTY_RESULT",
@@ -78,13 +85,32 @@ export async function analyzeCulture(
     })
   }
 
+  const comparison = await loadComparison(
+    brief,
+    locationQuery,
+    resolvedReferences,
+    client
+  )
+  const heatmap = await loadHeatmap(
+    brief,
+    locationQuery,
+    resolvedReferences,
+    resolvedTags,
+    client
+  )
+
   const fingerprint = createFingerprint(
     locationQuery,
-    parsed.location,
+    primaryLayer.location,
     signals,
     resolvedReferences,
-    resolvedTags
+    resolvedTags,
+    layers,
+    conditioningSummary(brief),
+    comparison,
+    heatmap
   )
+  const payload = primaryLayer.payload
   const rawPayload =
     shouldRetainRaw() && isJsonObject(payload)
       ? {
@@ -101,6 +127,10 @@ export async function analyzeCulture(
           })),
           tagResolution: resolvedTags.map(resolvedTagToJson),
           locationTaste: payload,
+          layerPayloads: layers.reduce<JsonObject>(
+            (result, layer) => ({ ...result, [layer.group]: layer.payload }),
+            {}
+          ),
         }
       : undefined
 
@@ -108,11 +138,11 @@ export async function analyzeCulture(
     signals,
     resolvedReferences,
     resolvedTags,
-    location: parsed.location,
+    location: primaryLayer.location,
     fingerprint,
     providerSummary: {
       locationQuery,
-      location: parsed.location,
+      location: primaryLayer.location,
       resolvedReferences: resolvedReferences.map((entity) => ({
         reference: entity.reference,
         status: entity.status,
@@ -125,17 +155,19 @@ export async function analyzeCulture(
         .map((entity) => entity.reference),
       resolvedTags: resolvedTags.map(resolvedTagToJson),
       signalCount: signals.length,
+      layers: layers.map((layer) => layerToJson(layer)),
+      comparison: comparison ? comparisonToJson(comparison) : null,
+      heatmap: heatmap ? heatmapToJson(heatmap) : null,
       fingerprint: fingerprintToJson(fingerprint),
       insightRequest: {
         filterType: "urn:tag",
         locationQuery,
-        entitySignalCount: resolvedReferences.filter(
-          (entity) => entity.status === "resolved"
-        ).length,
-        tagSignalCount: resolvedTags.filter(
-          (tag) => tag.status === "resolved"
-        ).length,
+        layerCount: layers.length,
         tagOperator: "intersection",
+        audienceIds: brief.qlooAudienceIds ?? [],
+        audienceWeight: brief.qlooAudienceWeight ?? null,
+        ageRange: brief.qlooAgeRange ?? null,
+        gender: brief.qlooGender ?? null,
         explainability: true,
       },
       observedAt,
@@ -144,9 +176,456 @@ export async function analyzeCulture(
   }
 }
 
+async function resolveTagsWithFallback(
+  queries: string[],
+  client: QlooClient,
+  observedAt: string
+): Promise<ResolvedTag[]> {
+  try {
+    return await resolveTags(queries, client, observedAt)
+  } catch (error) {
+    if (
+      !(error instanceof ProviderError) ||
+      !["INVALID_PARAMETERS", "UPSTREAM_FAILURE", "SCHEMA_MISMATCH"].includes(
+        error.code
+      )
+    )
+      throw error
+    return queries.map((query) => ({
+      query,
+      status: "unresolved" as const,
+      candidates: [],
+    }))
+  }
+}
+
+interface FingerprintLayerResult {
+  group: QlooFingerprintGroup
+  label: string
+  signals: QlooSignalRecord[]
+  unresolvedInputs: string[]
+  operator?: "union" | "intersection"
+  entitySignalCount: number
+  tagSignalCount: number
+  location: CultureResearchResult["location"]
+  payload: JsonObject
+}
+
+interface LayerSpec {
+  group: QlooFingerprintGroup
+  label: string
+  entitySignals: Array<{ entity: string; weight: number }>
+  tagSignals: Array<{ tag: string; weight: number }>
+  operator?: "union" | "intersection"
+  unresolvedInputs: string[]
+}
+
+async function loadFingerprintLayers(
+  brief: CampaignBrief,
+  locationQuery: string,
+  references: ResolvedEntity[],
+  tags: ResolvedTag[],
+  client: QlooClient,
+  observedAt: string
+): Promise<FingerprintLayerResult[]> {
+  const brand = references.find((reference) => reference.reference === brief.brandName)
+  const referenceEntities = references.filter(
+    (reference) => reference.reference !== brief.brandName
+  )
+  const entitySignalsFor = (entities: ResolvedEntity[], weight: number) =>
+    entities.flatMap((entity) =>
+      entity.status === "resolved" && entity.entityId
+        ? [{ entity: entity.entityId, weight }]
+        : []
+    )
+  const tagSignals = tags.flatMap((tag) =>
+    tag.status === "resolved" && tag.tagId
+      ? [{ tag: tag.tagId, weight: 15 }]
+      : []
+  )
+  const unresolved = (items: Array<{ status: string; query?: string; reference?: string }>) =>
+    items.flatMap((item) =>
+      item.status === "resolved" ? [] : [item.query ?? item.reference ?? "unknown"]
+    )
+  const specs: LayerSpec[] = [
+    {
+      group: "market",
+      label: "Market",
+      entitySignals: [],
+      tagSignals: [],
+      unresolvedInputs: [],
+    },
+    {
+      group: "brand",
+      label: "Brand in market",
+      entitySignals: brand ? entitySignalsFor([brand], 30) : [],
+      tagSignals: [],
+      operator: "union",
+      unresolvedInputs: brand && brand.status !== "resolved" ? [brand.reference] : [],
+    },
+    {
+      group: "product",
+      label: "Product in market",
+      entitySignals: [],
+      tagSignals,
+      operator: "union",
+      unresolvedInputs: unresolved(tags.map((tag) => ({ status: tag.status, query: tag.query }))),
+    },
+    {
+      group: "reference",
+      label: "References in market",
+      entitySignals: entitySignalsFor(referenceEntities, 20),
+      tagSignals: [],
+      operator: "union",
+      unresolvedInputs: unresolved(
+        referenceEntities.map((entity) => ({
+          status: entity.status,
+          reference: entity.reference,
+        }))
+      ),
+    },
+    {
+      group: "combined",
+      label: "Combined campaign fingerprint",
+      entitySignals: entitySignalsFor(references, 20).map((signal) => ({
+        ...signal,
+        weight: signal.entity === brand?.entityId ? 30 : signal.weight,
+      })),
+      tagSignals,
+      operator: "intersection",
+      unresolvedInputs: [
+        ...unresolved(
+          references.map((entity) => ({
+            status: entity.status,
+            reference: entity.reference,
+          }))
+        ),
+        ...unresolved(tags.map((tag) => ({ status: tag.status, query: tag.query }))),
+      ],
+    },
+  ]
+
+  const results: FingerprintLayerResult[] = []
+  for (const spec of specs) {
+    const payload = await client.getInsights({
+      filterType: "urn:tag",
+      locationQuery,
+      entitySignals: spec.entitySignals,
+      tagSignals: spec.tagSignals,
+      ...(spec.operator ? { tagOperator: spec.operator } : {}),
+      ...conditioningInput(brief),
+      take: readTake(),
+      explainability: true,
+    })
+    const parsed = parseTasteResponse(payload, observedAt, spec.group)
+    const inputSignals = [
+      ...entityInputSignals(references, spec.group, spec.entitySignals),
+      ...tagInputSignals(tags, spec.group, spec.tagSignals),
+    ]
+    results.push({
+      ...spec,
+      signals: dedupeSignals([
+        ...inputSignals.map(signalToRecord),
+        ...parsed.signals.map(signalToRecord),
+      ]),
+      location: parsed.location,
+      payload: isJsonObject(payload) ? payload : {},
+      entitySignalCount: spec.entitySignals.length,
+      tagSignalCount: spec.tagSignals.length,
+    })
+  }
+  return results
+}
+
+function conditioningInput(brief: CampaignBrief) {
+  return {
+    ...(brief.qlooAudienceIds && brief.qlooAudienceIds.length > 0
+      ? { audienceIds: brief.qlooAudienceIds }
+      : {}),
+    ...(brief.qlooAudienceWeight !== undefined
+      ? { audienceWeight: brief.qlooAudienceWeight }
+      : {}),
+    ...(brief.qlooAgeRange ? { ageRange: brief.qlooAgeRange } : {}),
+    ...(brief.qlooGender ? { gender: brief.qlooGender } : {}),
+  }
+}
+
+function entityInputSignals(
+  references: ResolvedEntity[],
+  group: QlooFingerprintGroup,
+  inputs: Array<{ entity: string; weight: number }>
+): CultureSignal[] {
+  return references.flatMap((reference) => {
+    if (
+      reference.status !== "resolved" ||
+      !reference.entityId ||
+      !reference.name ||
+      !reference.evidence ||
+      !inputs.some((input) => input.entity === reference.entityId)
+    )
+      return []
+    const input = inputs.find((candidate) => candidate.entity === reference.entityId)
+    return [
+      {
+        provider: "qloo" as const,
+        signalId: reference.entityId,
+        name: reference.name,
+        types: reference.types ?? [],
+        kind: "entity" as const,
+        inputWeight: input?.weight,
+        sourceGroup: group,
+        evidence: reference.evidence,
+      },
+    ]
+  })
+}
+
+function tagInputSignals(
+  tags: ResolvedTag[],
+  group: QlooFingerprintGroup,
+  inputs: Array<{ tag: string; weight: number }>
+): CultureSignal[] {
+  return tags.flatMap((tag) => {
+    if (
+      tag.status !== "resolved" ||
+      !tag.tagId ||
+      !tag.name ||
+      !tag.evidence ||
+      !inputs.some((input) => input.tag === tag.tagId)
+    )
+      return []
+    const input = inputs.find((candidate) => candidate.tag === tag.tagId)
+    return [
+      {
+        provider: "qloo" as const,
+        signalId: tag.tagId,
+        name: tag.name,
+        types: tag.types ?? [],
+        kind: "tag" as const,
+        inputWeight: input?.weight,
+        sourceGroup: group,
+        evidence: tag.evidence,
+      },
+    ]
+  })
+}
+
+async function loadComparison(
+  brief: CampaignBrief,
+  locationQuery: string,
+  references: ResolvedEntity[],
+  client: QlooClient
+): Promise<QlooComparisonSummary | undefined> {
+  const brand = references.find(
+    (reference) =>
+      reference.reference === brief.brandName &&
+      reference.status === "resolved" &&
+      reference.entityId
+  )
+  const referenceIds = references
+    .filter(
+      (reference) =>
+        reference.reference !== brief.brandName &&
+        reference.status === "resolved" &&
+        reference.entityId
+    )
+    .flatMap((reference) => (reference.entityId ? [reference.entityId] : []))
+  if (!brand?.entityId || referenceIds.length === 0) return undefined
+
+  try {
+    const payload = await client.compareInsights({
+      filterType: "urn:tag",
+      groupAEntityIds: [brand.entityId],
+      groupBEntityIds: referenceIds,
+      locationQuery,
+      take: readTake(),
+    })
+    return parseComparisonResponse(payload, "Brand", "Cultural references")
+  } catch {
+    return undefined
+  }
+}
+
+async function loadHeatmap(
+  brief: CampaignBrief,
+  locationQuery: string,
+  references: ResolvedEntity[],
+  tags: ResolvedTag[],
+  client: QlooClient
+): Promise<QlooHeatmap | undefined> {
+  if (process.env.QLOO_ENABLE_HEATMAP !== "true") return undefined
+  try {
+    const payload = await client.getHeatmap({
+      locationQuery,
+      boundary: readHeatmapBoundary(),
+      entityIds: references.flatMap((reference) =>
+        reference.status === "resolved" && reference.entityId
+          ? [reference.entityId]
+          : []
+      ),
+      tagIds: tags.flatMap((tag) =>
+        tag.status === "resolved" && tag.tagId ? [tag.tagId] : []
+      ),
+      ...conditioningInput(brief),
+      take: readHeatmapTake(),
+    })
+    return parseHeatmapResponse(payload)
+  } catch {
+    return undefined
+  }
+}
+
+function parseComparisonResponse(
+  payload: unknown,
+  groupA: string,
+  groupB: string
+): QlooComparisonSummary {
+  const results = isRecord(payload) ? payload.results : undefined
+  const values: unknown[] = Array.isArray(results)
+    ? results
+    : isRecord(results) && Array.isArray(results.tags)
+      ? results.tags
+      : isRecord(results) && Array.isArray(results.entities)
+        ? results.entities
+        : []
+  const topResults = values.flatMap((value) => {
+    if (!isRecord(value)) return []
+    const signalId =
+      readString(value.entity_id) ??
+      readString(value.tag_id) ??
+      readString(value.tag_value) ??
+      readString(value.id)
+    if (!signalId) return []
+    const query = isRecord(value.query) ? value.query : undefined
+    const affinity =
+      query && typeof query.affinity === "number"
+        ? query.affinity
+        : typeof value.affinity === "number"
+          ? value.affinity
+          : undefined
+    return [
+      {
+        signalId,
+        ...(readString(value.name) ? { name: readString(value.name) } : {}),
+        types: readStringArray(value.types),
+        ...(affinity !== undefined ? { affinity } : {}),
+      },
+    ]
+  })
+  return {
+    groupA,
+    groupB,
+    resultCount: topResults.length,
+    topResults: topResults.slice(0, 10),
+  }
+}
+
+function parseHeatmapResponse(payload: unknown): QlooHeatmap | undefined {
+  if (!isRecord(payload) || !isRecord(payload.results)) return undefined
+  const values = payload.results.heatmap
+  if (!Array.isArray(values)) return undefined
+  const points = values.flatMap((value) => {
+    if (!isRecord(value) || !isRecord(value.location)) return []
+    const latitude = value.location.latitude
+    const longitude = value.location.longitude
+    if (typeof latitude !== "number" || typeof longitude !== "number") return []
+    const query = isRecord(value.query) ? value.query : undefined
+    return [
+      {
+        latitude,
+        longitude,
+        ...(readString(value.location.geohash)
+          ? { geohash: readString(value.location.geohash) }
+          : {}),
+        ...(query && typeof query.affinity === "number"
+          ? { affinity: query.affinity }
+          : {}),
+        ...(query && typeof query.affinity_rank === "number"
+          ? { affinityRank: query.affinity_rank }
+          : {}),
+        ...(query && typeof query.popularity === "number"
+          ? { popularity: query.popularity }
+          : {}),
+      },
+    ]
+  })
+  return points.length > 0
+    ? { boundary: readHeatmapBoundary(), points }
+    : undefined
+}
+
+function layerToJson(layer: FingerprintLayerResult): JsonObject {
+  return {
+    group: layer.group,
+    label: layer.label,
+    signals: layer.signals.map(signalRecordToJson),
+    unresolvedInputs: layer.unresolvedInputs,
+    ...(layer.operator ? { operator: layer.operator } : {}),
+    entitySignalCount: layer.entitySignalCount,
+    tagSignalCount: layer.tagSignalCount,
+  }
+}
+
+function comparisonToJson(comparison: QlooComparisonSummary): JsonObject {
+  return {
+    groupA: comparison.groupA,
+    groupB: comparison.groupB,
+    resultCount: comparison.resultCount,
+    topResults: comparison.topResults.map((result) => ({
+      signalId: result.signalId,
+      ...(result.name ? { name: result.name } : {}),
+      types: result.types,
+      ...(result.affinity !== undefined ? { affinity: result.affinity } : {}),
+    })),
+  }
+}
+
+function heatmapToJson(heatmap: QlooHeatmap): JsonObject {
+  return {
+    boundary: heatmap.boundary,
+    points: heatmap.points.map((point) => ({
+      latitude: point.latitude,
+      longitude: point.longitude,
+      ...(point.geohash ? { geohash: point.geohash } : {}),
+      ...(point.affinity !== undefined ? { affinity: point.affinity } : {}),
+      ...(point.affinityRank !== undefined
+        ? { affinityRank: point.affinityRank }
+        : {}),
+      ...(point.popularity !== undefined ? { popularity: point.popularity } : {}),
+    })),
+  }
+}
+
+function signalRecordToJson(signal: QlooSignalRecord): JsonObject {
+  return {
+    signalId: signal.signalId,
+    kind: signal.kind,
+    name: signal.name,
+    types: signal.types,
+    ...(signal.affinity !== undefined ? { affinity: signal.affinity } : {}),
+    ...(signal.inputWeight !== undefined
+      ? { inputWeight: signal.inputWeight }
+      : {}),
+    sourceGroup: signal.sourceGroup,
+    evidence: {
+      source: signal.evidence.source,
+      fieldPath: signal.evidence.fieldPath,
+      observedAt: signal.evidence.observedAt,
+      verification: signal.evidence.verification,
+      ...(signal.evidence.providerEntityId
+        ? { providerEntityId: signal.evidence.providerEntityId }
+        : {}),
+      ...(signal.evidence.excerpt
+        ? { excerpt: signal.evidence.excerpt }
+        : {}),
+    },
+  }
+}
+
 function parseTasteResponse(
   payload: unknown,
-  observedAt: string
+  observedAt: string,
+  sourceGroup: QlooFingerprintGroup
 ): {
   signals: CultureSignal[]
   location: CultureResearchResult["location"]
@@ -172,12 +651,16 @@ function parseTasteResponse(
         : undefined)
   )
   const signals = payload.results.tags.flatMap((tag) =>
-    parseSignal(tag, observedAt)
+    parseSignal(tag, observedAt, sourceGroup)
   )
   return { signals, location }
 }
 
-function parseSignal(value: unknown, observedAt: string): CultureSignal[] {
+function parseSignal(
+  value: unknown,
+  observedAt: string,
+  sourceGroup: QlooFingerprintGroup
+): CultureSignal[] {
   if (!isRecord(value)) return []
   const signalId = readString(value.tag_id) ?? readString(value.tag_value)
   const name = readString(value.name)
@@ -203,7 +686,7 @@ function parseSignal(value: unknown, observedAt: string): CultureSignal[] {
         excerpt: name,
       },
       kind: "tag",
-      sourceGroup: "market",
+      sourceGroup,
     },
   ]
 }
@@ -240,7 +723,11 @@ function createFingerprint(
   location: CultureResearchResult["location"],
   signals: CultureSignal[],
   references: ResolvedEntity[],
-  tags: ResolvedTag[]
+  tags: ResolvedTag[],
+  layers: FingerprintLayerResult[],
+  conditioning: QlooFingerprint["conditioning"],
+  comparison?: QlooComparisonSummary,
+  heatmap?: QlooHeatmap
 ): QlooFingerprint {
   const unresolvedInputs = [
     ...references
@@ -270,10 +757,51 @@ function createFingerprint(
     locationQuery,
     location,
     signals: [...signals.map(signalToRecord), ...tagInputSignals],
+    layers: layers.map((layer) => ({
+      group: layer.group,
+      label: layer.label,
+      signals: layer.signals,
+      unresolvedInputs: layer.unresolvedInputs,
+      ...(layer.operator ? { operator: layer.operator } : {}),
+      entitySignalCount: layer.entitySignalCount,
+      tagSignalCount: layer.tagSignalCount,
+    })),
     unresolvedInputs,
+    ...(conditioning ? { conditioning } : {}),
     tagOperator: "intersection",
     explainabilityRequested: true,
+    ...(comparison ? { comparison } : {}),
+    ...(heatmap ? { heatmap } : {}),
   }
+}
+
+function conditioningSummary(
+  brief: CampaignBrief
+): QlooFingerprint["conditioning"] {
+  if (
+    (!brief.qlooAudienceIds || brief.qlooAudienceIds.length === 0) &&
+    brief.qlooAgeRange === undefined &&
+    brief.qlooGender === undefined
+  )
+    return undefined
+  return {
+    audienceIds: brief.qlooAudienceIds ?? [],
+    ...(brief.qlooAudienceWeight !== undefined
+      ? { audienceWeight: brief.qlooAudienceWeight }
+      : {}),
+    ...(brief.qlooAgeRange ? { ageRange: brief.qlooAgeRange } : {}),
+    ...(brief.qlooGender ? { gender: brief.qlooGender } : {}),
+  }
+}
+
+function dedupeSignals(signals: QlooSignalRecord[]): QlooSignalRecord[] {
+  const seen = new Set<string>()
+  return signals.filter((signal) => {
+    const key = `${signal.sourceGroup}:${signal.signalId}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function signalToRecord(signal: CultureSignal): QlooSignalRecord {
@@ -291,6 +819,22 @@ function signalToRecord(signal: CultureSignal): QlooSignalRecord {
   }
 }
 
+function recordToCultureSignal(signal: QlooSignalRecord): CultureSignal {
+  return {
+    provider: "qloo",
+    signalId: signal.signalId,
+    name: signal.name,
+    types: signal.types,
+    ...(signal.affinity !== undefined ? { affinity: signal.affinity } : {}),
+    ...(signal.inputWeight !== undefined
+      ? { inputWeight: signal.inputWeight }
+      : {}),
+    kind: signal.kind,
+    sourceGroup: signal.sourceGroup,
+    evidence: signal.evidence,
+  }
+}
+
 function fingerprintToJson(fingerprint: QlooFingerprint): JsonObject {
   return {
     locationQuery: fingerprint.locationQuery,
@@ -303,37 +847,41 @@ function fingerprintToJson(fingerprint: QlooFingerprint): JsonObject {
         ? { disambiguation: fingerprint.location.disambiguation }
         : {}),
     },
-    signals: fingerprint.signals.map((signal) => ({
-      signalId: signal.signalId,
-      kind: signal.kind,
-      name: signal.name,
-      types: signal.types,
-      ...(signal.affinity !== undefined ? { affinity: signal.affinity } : {}),
-      ...(signal.inputWeight !== undefined
-        ? { inputWeight: signal.inputWeight }
-        : {}),
-      sourceGroup: signal.sourceGroup,
-      evidence: {
-        source: signal.evidence.source,
-        fieldPath: signal.evidence.fieldPath,
-        observedAt: signal.evidence.observedAt,
-        verification: signal.evidence.verification,
-        ...(signal.evidence.label
-          ? { label: signal.evidence.label }
-          : {}),
-        ...(signal.evidence.providerEntityId
-          ? { providerEntityId: signal.evidence.providerEntityId }
-          : {}),
-        ...(signal.evidence.excerpt
-          ? { excerpt: signal.evidence.excerpt }
-          : {}),
-      },
+    signals: fingerprint.signals.map(signalRecordToJson),
+    layers: fingerprint.layers.map((layer) => ({
+      group: layer.group,
+      label: layer.label,
+      signals: layer.signals.map(signalRecordToJson),
+      unresolvedInputs: layer.unresolvedInputs,
+      ...(layer.operator ? { operator: layer.operator } : {}),
+      entitySignalCount: layer.entitySignalCount,
+      tagSignalCount: layer.tagSignalCount,
     })),
     unresolvedInputs: fingerprint.unresolvedInputs,
+    ...(fingerprint.conditioning
+      ? {
+          conditioning: {
+            audienceIds: fingerprint.conditioning.audienceIds,
+            ...(fingerprint.conditioning.audienceWeight !== undefined
+              ? { audienceWeight: fingerprint.conditioning.audienceWeight }
+              : {}),
+            ...(fingerprint.conditioning.ageRange
+              ? { ageRange: fingerprint.conditioning.ageRange }
+              : {}),
+            ...(fingerprint.conditioning.gender
+              ? { gender: fingerprint.conditioning.gender }
+              : {}),
+          },
+        }
+      : {}),
     ...(fingerprint.tagOperator
       ? { tagOperator: fingerprint.tagOperator }
       : {}),
     explainabilityRequested: fingerprint.explainabilityRequested,
+    ...(fingerprint.comparison
+      ? { comparison: comparisonToJson(fingerprint.comparison) }
+      : {}),
+    ...(fingerprint.heatmap ? { heatmap: heatmapToJson(fingerprint.heatmap) } : {}),
   }
 }
 
@@ -381,6 +929,16 @@ function buildLocationQuery(brief: CampaignBrief): string {
 function readTake(): number {
   const value = Number(process.env.QLOO_INSIGHTS_TAKE)
   return Number.isInteger(value) && value > 0 && value <= 100 ? value : 10
+}
+
+function readHeatmapTake(): number {
+  const value = Number(process.env.QLOO_HEATMAP_TAKE)
+  return Number.isInteger(value) && value > 0 && value <= 500 ? value : 100
+}
+
+function readHeatmapBoundary(): "geohash" | "city" | "neighborhood" {
+  const value = process.env.QLOO_HEATMAP_BOUNDARY
+  return value === "city" || value === "neighborhood" ? value : "geohash"
 }
 
 function shouldRetainRaw(): boolean {

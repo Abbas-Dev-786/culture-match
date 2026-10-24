@@ -74,6 +74,10 @@ test("Qloo resolves exact references and normalizes location signals", async () 
   assert.equal(result.signals.length, 11)
   assert.equal(result.signals[1]?.name, "Hindi Cinema")
   assert.equal(result.signals[1]?.evidence.verification, "provider_reported")
+  assert.deepEqual(
+    result.fingerprint.layers.map((layer) => layer.group),
+    ["market", "brand", "product", "reference", "combined"]
+  )
 })
 
 test("Qloo keeps unresolved references explicit", async () => {
@@ -159,6 +163,40 @@ test("Qloo enriches creator content with location-conditioned affinity", async (
   )
   assert.equal(creator.qlooSignals?.[0]?.signalId, "urn:tag:category:streetwear")
   assert.equal(creator.qlooSignals?.[0]?.affinity, 0.92)
+})
+
+test("Qloo exposes documented comparison and heatmap request contracts", async () => {
+  const requests: string[] = []
+  const client = createQlooClient({
+    baseUrl: "https://qloo.test",
+    searchUrl: "https://qloo.test/search",
+    insightsUrl: "https://qloo.test/v2/insights",
+    compareUrl: "https://qloo.test/v2/insights/compare",
+    apiKey: "test-key",
+    fetchImpl: async (input) => {
+      requests.push(input)
+      return new Response(JSON.stringify({ results: { tags: [] } }), { status: 200 })
+    },
+  })
+  await client.compareInsights({
+    filterType: "urn:tag",
+    groupAEntityIds: ["brand-1"],
+    groupBEntityIds: ["reference-1", "reference-2"],
+    locationQuery: "India",
+    take: 10,
+  })
+  await client.getHeatmap({
+    locationQuery: "India",
+    tagIds: ["urn:tag:streetwear"],
+    boundary: "city",
+    ageRange: "35_and_younger",
+    gender: "female",
+  })
+  assert.match(requests[0] ?? "", /a\.signal\.interests\.entities=brand-1/)
+  assert.match(requests[0] ?? "", /b\.signal\.interests\.entities=reference-1%2Creference-2/)
+  assert.match(requests[1] ?? "", /filter\.type=urn%3Aheatmap/)
+  assert.match(requests[1] ?? "", /output\.heatmap\.boundary=city/)
+  assert.match(requests[1] ?? "", /signal\.demographics\.gender=female/)
 })
 
 test("Qloo classifies rate limits, schema mismatches, and empty signals", async () => {

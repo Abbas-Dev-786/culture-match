@@ -47,6 +47,11 @@ export function BaselineComparison({
             <p className="mt-1 text-muted-foreground">
               Compared with the same creator set scored without Qloo resonance: {comparison.qlooAblation.scoredCreatorCount} creators scored, average score delta {comparison.qlooAblation.averageScoreDelta > 0 ? "+" : ""}{comparison.qlooAblation.averageScoreDelta}.
             </p>
+            {comparison.qlooAblation.creatorSignalCount !== undefined ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Creator signals: {comparison.qlooAblation.creatorSignalCount} observed · {comparison.qlooAblation.resolvedCreatorSignalCount ?? 0} resolved · {comparison.qlooAblation.unresolvedCreatorSignalCount ?? 0} unresolved · {Math.round((comparison.qlooAblation.creatorEvidenceCoverage ?? 0) * 100)}% evidence coverage.
+              </p>
+            ) : null}
           </div>
         ) : null}
         <Tabs defaultValue="culture" className="w-full">

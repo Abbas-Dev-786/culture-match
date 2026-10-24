@@ -22,6 +22,10 @@ export interface CampaignBrief {
   maxFollowers?: number
   maxBudget?: number
   currency?: string
+  qlooAudienceIds?: string[]
+  qlooAudienceWeight?: number
+  qlooAgeRange?: QlooAgeRange
+  qlooGender?: QlooGender
   creatorLimit: number
 }
 
@@ -57,6 +61,15 @@ export type QlooSignalGroup =
   | "combined"
   | "creator"
 
+export type QlooAgeRange =
+  | "35_and_younger"
+  | "36_to_55"
+  | "55_and_older"
+
+export type QlooGender = "male" | "female"
+
+export type QlooFingerprintGroup = Exclude<QlooSignalGroup, "creator">
+
 export interface QlooSignalRecord {
   signalId: string
   kind: QlooSignalKind
@@ -76,9 +89,52 @@ export interface QlooFingerprint {
     disambiguation?: string
   }
   signals: QlooSignalRecord[]
+  layers: QlooFingerprintLayer[]
   unresolvedInputs: string[]
+  conditioning?: {
+    audienceIds: string[]
+    audienceWeight?: number
+    ageRange?: QlooAgeRange
+    gender?: QlooGender
+  }
   tagOperator?: "union" | "intersection"
   explainabilityRequested: boolean
+  comparison?: QlooComparisonSummary
+  heatmap?: QlooHeatmap
+}
+
+export interface QlooFingerprintLayer {
+  group: QlooFingerprintGroup
+  label: string
+  signals: QlooSignalRecord[]
+  unresolvedInputs: string[]
+  operator?: "union" | "intersection"
+  entitySignalCount: number
+  tagSignalCount: number
+}
+
+export interface QlooComparisonSummary {
+  groupA: string
+  groupB: string
+  resultCount: number
+  topResults: Array<{
+    signalId: string
+    name?: string
+    types: string[]
+    affinity?: number
+  }>
+}
+
+export interface QlooHeatmap {
+  boundary: "geohash" | "city" | "neighborhood"
+  points: Array<{
+    latitude: number
+    longitude: number
+    geohash?: string
+    affinity?: number
+    affinityRank?: number
+    popularity?: number
+  }>
 }
 
 export interface CreatorContentSignal {
@@ -174,6 +230,10 @@ export interface BaselineComparison {
     scoredCreatorCount: number
     averageScoreDelta: number
     materiallyChanged: boolean
+    creatorSignalCount?: number
+    resolvedCreatorSignalCount?: number
+    unresolvedCreatorSignalCount?: number
+    creatorEvidenceCoverage?: number
     rankChanges: Array<{
       providerCreatorId: string
       withQlooRank?: number

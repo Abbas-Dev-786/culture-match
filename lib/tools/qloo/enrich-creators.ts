@@ -34,7 +34,7 @@ export async function enrichCreatorsWithQloo(
 
     try {
       const resolved = await resolveTags(
-        creator.contentSignals.slice(0, 5).map((signal) => signal.text),
+        extractCreatorTagQueries(creator.contentSignals).slice(0, 10),
         client
       )
       const resolvedTags = resolved.flatMap((tag) =>
@@ -112,6 +112,18 @@ function readTagAffinities(payload: unknown): Map<string, number> {
 function readCreatorLimit(): number {
   const value = Number(process.env.QLOO_CREATOR_ENRICH_LIMIT)
   return Number.isInteger(value) && value > 0 ? Math.min(value, 50) : 20
+}
+
+function extractCreatorTagQueries(
+  signals: NormalizedCreator["contentSignals"]
+): string[] {
+  const queries = signals.flatMap((signal) => {
+    const hashtags = [...signal.text.matchAll(/#([\p{L}\p{N}_-]+)/gu)].map(
+      (match) => match[1]
+    )
+    return hashtags.length > 0 ? hashtags : [signal.text]
+  })
+  return [...new Set(queries.map((query) => query.trim()).filter(Boolean))]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

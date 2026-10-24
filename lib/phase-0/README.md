@@ -24,6 +24,7 @@ QLOO_API_KEY
 QLOO_SEARCH_URL
 QLOO_TAGS_URL
 QLOO_INSIGHTS_URL
+QLOO_COMPARE_URL
 APIFY_API_TOKEN
 ```
 
@@ -53,6 +54,9 @@ QLOO_INSIGHTS_LOCATION_QUERY
 QLOO_INSIGHTS_TAKE
 QLOO_TAGS_URL
 QLOO_CREATOR_ENRICH_LIMIT
+QLOO_ENABLE_HEATMAP
+QLOO_HEATMAP_BOUNDARY
+QLOO_HEATMAP_TAKE
 OPENROUTER_API_KEY
 OPENROUTER_MODEL
 NEXT_PUBLIC_SUPABASE_URL
@@ -67,7 +71,7 @@ Run with the local environment file:
 node --experimental-strip-types --env-file=.env.local lib/phase-0/run-spike.mts
 ```
 
-The runner writes only sanitized output to `lib/phase-0/fixtures/`, updates `provider-field-matrix.md`, and writes `fixtures/phase-0-run-summary.json`.
+The runner writes only sanitized output to `lib/phase-0/fixtures/`, including a `qloo/cultural-fingerprint.json` produced by the same layered analysis path used by the application. It updates `provider-field-matrix.md` and writes `fixtures/phase-0-run-summary.json`.
 
 The Phase 0 model decision is OpenRouter with `qwen/qwen3.8-27b:free`. It is used only for optional schema-validated planning/report text in later phases; deterministic matching and scoring must work without it. OpenRouter credentials remain server-side. The selected free endpoint is rate-limited and must not receive confidential or personal data.
 

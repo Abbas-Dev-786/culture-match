@@ -28,6 +28,10 @@ function toCampaignInsert(
     max_followers: input.maxFollowers ?? null,
     max_budget: input.maxBudget ?? null,
     currency: input.currency ?? null,
+    qloo_audience_ids: input.qlooAudienceIds ?? [],
+    qloo_audience_weight: input.qlooAudienceWeight ?? null,
+    qloo_age_range: input.qlooAgeRange ?? null,
+    qloo_gender: input.qlooGender ?? null,
     creator_limit: input.creatorLimit,
     status: "queued",
   }

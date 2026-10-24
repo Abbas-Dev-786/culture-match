@@ -14,6 +14,8 @@ import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 
 type MarketScope = "country" | "region" | "city"
+type QlooAgeRange = "35_and_younger" | "36_to_55" | "55_and_older"
+type QlooGender = "male" | "female"
 
 interface CreateCampaignResponse {
   campaign?: { id: string }
@@ -37,6 +39,10 @@ export function CampaignForm() {
   const [objective, setObjective] = useState("")
   const [culturalReferences, setCulturalReferences] = useState("")
   const [preferredLanguages, setPreferredLanguages] = useState("")
+  const [qlooAudienceIds, setQlooAudienceIds] = useState("")
+  const [qlooAudienceWeight, setQlooAudienceWeight] = useState("10")
+  const [qlooAgeRange, setQlooAgeRange] = useState<QlooAgeRange | "">("")
+  const [qlooGender, setQlooGender] = useState<QlooGender | "">("")
   const [minFollowers, setMinFollowers] = useState("")
   const [maxFollowers, setMaxFollowers] = useState("")
   const [maxBudget, setMaxBudget] = useState("")
@@ -61,6 +67,8 @@ export function CampaignForm() {
       maxBudget,
       currency,
       creatorLimit,
+      qlooAudienceIds,
+      qlooAudienceWeight,
       consentGiven,
     })
     if (validationMessage) {
@@ -91,6 +99,14 @@ export function CampaignForm() {
             objective: objective.trim(),
             culturalReferences: splitList(culturalReferences),
             preferredLanguages: splitList(preferredLanguages),
+            ...(splitList(qlooAudienceIds).length > 0
+              ? { qlooAudienceIds: splitList(qlooAudienceIds) }
+              : {}),
+            ...(splitList(qlooAudienceIds).length > 0 && optionalNumber(qlooAudienceWeight) !== undefined
+              ? { qlooAudienceWeight: optionalNumber(qlooAudienceWeight) }
+              : {}),
+            ...(qlooAgeRange ? { qlooAgeRange } : {}),
+            ...(qlooGender ? { qlooGender } : {}),
             minFollowers: optionalNumber(minFollowers),
             maxFollowers: optionalNumber(maxFollowers),
             maxBudget: optionalNumber(maxBudget),
@@ -207,6 +223,44 @@ export function CampaignForm() {
                     <Input id="preferredLanguages" value={preferredLanguages} onChange={(event) => setPreferredLanguages(event.target.value)} placeholder="English, Hindi" />
                   </Field>
                 </div>
+                <div className="grid gap-5 md:grid-cols-2">
+                  <Field>
+                    <FieldLabel htmlFor="qlooAudienceIds">Qloo audience IDs (optional)</FieldLabel>
+                    <Input id="qlooAudienceIds" value={qlooAudienceIds} onChange={(event) => setQlooAudienceIds(event.target.value)} placeholder="urn:audience:..." />
+                    <FieldDescription>Only use audience IDs explicitly selected for this campaign. Separate multiple IDs with commas.</FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="qlooAudienceWeight">Audience signal weight</FieldLabel>
+                    <Input id="qlooAudienceWeight" type="number" min="0.01" max="100" step="0.01" value={qlooAudienceWeight} onChange={(event) => setQlooAudienceWeight(event.target.value)} />
+                    <FieldDescription>Relative Qloo influence; applied only when audience IDs are provided.</FieldDescription>
+                  </Field>
+                </div>
+                <div className="grid gap-5 md:grid-cols-2">
+                  <Field>
+                    <FieldLabel htmlFor="qlooAgeRange">Explicit Qloo age conditioning</FieldLabel>
+                    <Select value={qlooAgeRange || "none"} onValueChange={(value) => setQlooAgeRange(value === "none" ? "" : value as QlooAgeRange)}>
+                      <SelectTrigger id="qlooAgeRange" className="w-full" aria-label="Explicit Qloo age conditioning"><SelectValue placeholder="No age conditioning" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No age conditioning</SelectItem>
+                        <SelectItem value="35_and_younger">35 and younger</SelectItem>
+                        <SelectItem value="36_to_55">36 to 55</SelectItem>
+                        <SelectItem value="55_and_older">55 and older</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="qlooGender">Explicit Qloo gender conditioning</FieldLabel>
+                    <Select value={qlooGender || "none"} onValueChange={(value) => setQlooGender(value === "none" ? "" : value as QlooGender)}>
+                      <SelectTrigger id="qlooGender" className="w-full" aria-label="Explicit Qloo gender conditioning"><SelectValue placeholder="No gender conditioning" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No gender conditioning</SelectItem>
+                        <SelectItem value="male">Male</SelectItem>
+                        <SelectItem value="female">Female</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </div>
+                <p className="text-xs text-muted-foreground">These are explicit Qloo affinity inputs, not inferred identity or verified audience demographics.</p>
               </section>
 
               <section className="grid gap-5" aria-labelledby="constraints-heading">
@@ -276,6 +330,8 @@ function validateForm(input: {
   maxBudget: string
   currency: string
   creatorLimit: string
+  qlooAudienceIds: string
+  qlooAudienceWeight: string
   consentGiven: boolean
 }): string | undefined {
   if (!input.brandName.trim() || !input.productCategory.trim() || !input.country.trim() || !input.objective.trim()) return "Brand, product, country, and objective are required."
@@ -288,6 +344,10 @@ function validateForm(input: {
   if (min !== undefined && max !== undefined && min > max) return "Minimum followers cannot exceed maximum followers."
   if (input.maxBudget.trim() && optionalNumber(input.maxBudget) === undefined) return "Maximum budget must be a valid number."
   if (input.maxBudget.trim() && !/^[A-Za-z]{3}$/.test(input.currency.trim())) return "Enter a three-letter currency when setting a budget."
+  if (input.qlooAudienceIds.trim()) {
+    const weight = optionalNumber(input.qlooAudienceWeight)
+    if (weight === undefined || weight <= 0 || weight > 100) return "Qloo audience weight must be between 0 and 100."
+  }
   const creatorLimit = optionalNumber(input.creatorLimit)
   if (creatorLimit === undefined || !Number.isInteger(creatorLimit) || creatorLimit < 1 || creatorLimit > 100) return "Creator limit must be an integer from 1 to 100."
   if (!input.consentGiven) return "Confirm that you understand the campaign brief will be persisted."

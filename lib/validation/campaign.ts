@@ -47,6 +47,12 @@ export const campaignBriefSchema = z
     maxFollowers: z.number().int().positive().max(1_000_000_000).optional(),
     maxBudget: z.number().finite().positive().max(1_000_000_000).optional(),
     currency: z.string().trim().regex(/^[A-Z]{3}$/).optional(),
+    qlooAudienceIds: z.array(nonEmptyText(160)).max(10).optional(),
+    qlooAudienceWeight: z.number().finite().positive().max(100).optional(),
+    qlooAgeRange: z
+      .enum(["35_and_younger", "36_to_55", "55_and_older"])
+      .optional(),
+    qlooGender: z.enum(["male", "female"]).optional(),
     creatorLimit: z.number().int().min(1).max(100),
   })
   .superRefine((brief, context) => {

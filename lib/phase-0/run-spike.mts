@@ -3,6 +3,8 @@ import { join } from "node:path"
 import process from "node:process"
 import { phase0DemoBrief } from "./markets.ts"
 import { sanitizeErrorMessage, sanitizeForFixture } from "./redaction.ts"
+import { analyzeCulture } from "../tools/qloo/analyze-culture.ts"
+import { createQlooClient } from "../tools/qloo/client.ts"
 
 type JsonObject = Record<string, unknown>
 
@@ -57,6 +59,9 @@ async function main(): Promise<void> {
       qlooApiKeyConfigured: Boolean(qlooApiKey),
       qlooSearchUrlConfigured: Boolean(qlooSearchUrl),
       qlooInsightsUrlConfigured: Boolean(qlooInsightsUrl),
+      qlooTagsUrlConfigured: Boolean(process.env.QLOO_TAGS_URL?.trim()),
+      qlooCompareUrlConfigured: Boolean(process.env.QLOO_COMPARE_URL?.trim()),
+      qlooHeatmapEnabled: process.env.QLOO_ENABLE_HEATMAP === "true",
       apifyTokenConfigured: Boolean(apifyToken),
       apifyTimeoutSeconds,
     },
@@ -149,9 +154,45 @@ async function runQlooSpike(): Promise<JsonObject> {
   }
 
   const hasFailure = observations.some((item) => item.status === "failed")
+  let fingerprintValidation: JsonObject
+  try {
+    const analysis = await analyzeCulture(
+      phase0DemoBrief,
+      createQlooClient(),
+      new Date().toISOString()
+    )
+    fingerprintValidation = {
+      status: "validated",
+      location: analysis.location,
+      signalCount: analysis.signals.length,
+      layerCount: analysis.fingerprint.layers.length,
+      resolvedReferenceCount: analysis.resolvedReferences.filter(
+        (reference) => reference.status === "resolved"
+      ).length,
+      resolvedTagCount: analysis.resolvedTags.filter(
+        (tag) => tag.status === "resolved"
+      ).length,
+      hasComparison: Boolean(analysis.fingerprint.comparison),
+      hasHeatmap: Boolean(analysis.fingerprint.heatmap),
+      fingerprint: sanitizeForFixture(analysis.fingerprint),
+    }
+    await writeJson(
+      join(qlooFixtureDirectory, "cultural-fingerprint.json"),
+      fingerprintValidation
+    )
+  } catch (error) {
+    fingerprintValidation = {
+      status: "failed",
+      error: safeError(error),
+    }
+  }
   return {
-    status: hasFailure ? "failed" : "response_captured_needs_manual_review",
+    status:
+      hasFailure || fingerprintValidation.status === "failed"
+        ? "failed"
+        : "response_captured_needs_manual_review",
     requests: observations,
+    fingerprintValidation,
     notes: [
       "Confirm the selected filter.type and location parameters are documented and compatible.",
       "Confirm returned score semantics before using any score in matching.",

@@ -417,12 +417,19 @@ async function scoreWorkflow(
     undefined,
     { includeQlooResonance: false }
   )
+  const qlooMetrics = summarizeQlooCreatorSignals(
+    cultureRows.map(normalizeStoredCreator)
+  )
   const comparison: BaselineComparison = {
     ...compareRuns(
     rankedCreators(baselineScores),
     rankedCreators(cultureScores)
     ),
-    qlooAblation: compareQlooAblation(cultureScores, cultureAblationScores),
+    qlooAblation: compareQlooAblation(
+      cultureScores,
+      cultureAblationScores,
+      qlooMetrics
+    ),
   }
 
   await saveCreatorMatches(client, {
@@ -599,6 +606,16 @@ function campaignToBrief(campaign: CampaignRow): CampaignBrief {
       : {}),
     ...(campaign.max_budget !== null ? { maxBudget: campaign.max_budget } : {}),
     ...(campaign.currency ? { currency: campaign.currency } : {}),
+    ...(campaign.qloo_audience_ids.length > 0
+      ? { qlooAudienceIds: campaign.qloo_audience_ids }
+      : {}),
+    ...(campaign.qloo_audience_weight !== null
+      ? { qlooAudienceWeight: campaign.qloo_audience_weight }
+      : {}),
+    ...(campaign.qloo_age_range
+      ? { qlooAgeRange: campaign.qloo_age_range }
+      : {}),
+    ...(campaign.qloo_gender ? { qlooGender: campaign.qloo_gender } : {}),
     creatorLimit: campaign.creator_limit,
   }
 }
@@ -611,7 +628,8 @@ function locationQueryForCampaign(campaign: CampaignRow): string {
 
 function compareQlooAblation(
   withQloo: ReturnType<typeof scoreCreators>,
-  withoutQloo: ReturnType<typeof scoreCreators>
+  withoutQloo: ReturnType<typeof scoreCreators>,
+  metrics: ReturnType<typeof summarizeQlooCreatorSignals>
 ): NonNullable<BaselineComparison["qlooAblation"]> {
   const withoutMap = new Map(
     withoutQloo.map((result, index) => [result.creator.providerCreatorId, {
@@ -651,10 +669,39 @@ function compareQlooAblation(
       }]
     })
   return {
-    scoredCreatorCount: deltas.length,
+    scoredCreatorCount: withMap.size,
     averageScoreDelta: deltas.length > 0 ? round(deltas.reduce((sum, value) => sum + value, 0) / deltas.length) : 0,
     materiallyChanged: rankChanges.length > 0,
+    ...metrics,
     rankChanges,
+  }
+}
+
+function summarizeQlooCreatorSignals(
+  creators: ReturnType<typeof normalizeStoredCreator>[]
+) {
+  const creatorSignalCount = creators.reduce(
+    (sum, creator) => sum + creator.contentSignals.length,
+    0
+  )
+  const resolvedCreatorSignalCount = creators.reduce(
+    (sum, creator) =>
+      sum +
+      (creator.qlooSignals?.filter((signal) => signal.affinity !== undefined)
+        .length ?? 0),
+    0
+  )
+  return {
+    creatorSignalCount,
+    resolvedCreatorSignalCount,
+    unresolvedCreatorSignalCount: Math.max(
+      0,
+      creatorSignalCount - resolvedCreatorSignalCount
+    ),
+    creatorEvidenceCoverage:
+      creatorSignalCount > 0
+        ? round(Math.min(1, resolvedCreatorSignalCount / creatorSignalCount))
+        : 0,
   }
 }
 

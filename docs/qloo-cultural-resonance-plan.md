@@ -23,13 +23,17 @@ The repository now implements the core plan:
 - Weighted Qloo entity and tag signals with explicit union/intersection operators.
 - Qloo tag resolution for product categories and creator-content signals.
 - A persisted cultural fingerprint with stable IDs, weights, affinities, unresolved inputs, and provenance.
+- Separate market, brand, product, reference, and combined Qloo analysis layers.
+- Explicit user-selected audience, age, and gender conditioning with persisted campaign inputs.
 - Bounded Apify content-signal extraction from captions, descriptions, hashtags, and text fields.
 - Location-conditioned creator-content enrichment and a dedicated Qloo resonance score.
 - Baseline, Qloo-informed, and Qloo ablation scoring with ranking and score deltas.
+- Creator signal resolution counts, unresolved counts, and evidence coverage metrics.
+- Qloo entity comparison and opt-in heatmap retrieval/rendering.
 - Results-page cards for the fingerprint and measured Qloo contribution.
 - Canonical Supabase migrations under `supabase/migrations` and contract coverage for the application schema.
 
-Before the hackathon demo, configure the active Qloo endpoints, run one live campaign, capture a successful fixture, and confirm that at least one creator has a resolved content signal with a non-zero affinity. The implementation intentionally keeps unresolved or unavailable signals visible instead of fabricating a match.
+Before the hackathon demo, configure the active Qloo endpoints, run one live campaign with `node --experimental-strip-types --env-file=.env.local lib/phase-0/run-spike.mts`, capture a successful fixture, and confirm that at least one creator has a resolved content signal with a non-zero affinity. The implementation intentionally keeps unresolved or unavailable signals visible instead of fabricating a match.
 
 ## 2. Current limitation
 
@@ -362,21 +366,21 @@ Every explanation should follow this pattern:
 
 > This creator moved from rank 8 to rank 2 because observed content included Qloo-resolved signals A and B. Those signals had strong affinity in the selected market. Audience geography and campaign ROI were not verified.
 
-## 12. Optional advanced features
+## 12. Advanced Qloo features
 
-These features are useful only after the core fingerprint and creator-content loop works.
+These features are now integrated behind explicit user input or an environment flag.
 
 ### Audience conditioning
 
-Allow the marketer to select a supported Qloo audience segment when the campaign brief contains an explicit audience persona. Do not infer an audience segment from the market alone.
+The campaign form accepts supported Qloo audience IDs and relative weight, plus explicit age and gender conditioning. These values are stored with the campaign and sent to every layered Insights request. The application does not infer them from the market or creator content.
 
 ### Heatmap visualization
 
-Use Qloo heatmaps to visualize where a selected signal is concentrated or how a regional signal varies spatially. This can make the demo memorable, but it must not be presented as creator audience geography.
+Set `QLOO_ENABLE_HEATMAP=true` to retrieve Qloo heatmap points. The results page renders a compact signal-concentration visualization and labels it as Qloo geography, never creator audience geography.
 
 ### Entity comparison
 
-Use comparison analysis to show relationships such as:
+When both a brand and distinct cultural references resolve to entities, the workflow calls Qloo Analysis Compare and shows the returned comparison summary. This supports relationships such as:
 
 - Brand versus target market
 - Product category versus target market

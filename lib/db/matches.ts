@@ -154,6 +154,18 @@ function comparisonToJson(comparison: BaselineComparison): JsonObject {
             scoredCreatorCount: comparison.qlooAblation.scoredCreatorCount,
             averageScoreDelta: comparison.qlooAblation.averageScoreDelta,
             materiallyChanged: comparison.qlooAblation.materiallyChanged,
+            ...(comparison.qlooAblation.creatorSignalCount !== undefined
+              ? { creatorSignalCount: comparison.qlooAblation.creatorSignalCount }
+              : {}),
+            ...(comparison.qlooAblation.resolvedCreatorSignalCount !== undefined
+              ? { resolvedCreatorSignalCount: comparison.qlooAblation.resolvedCreatorSignalCount }
+              : {}),
+            ...(comparison.qlooAblation.unresolvedCreatorSignalCount !== undefined
+              ? { unresolvedCreatorSignalCount: comparison.qlooAblation.unresolvedCreatorSignalCount }
+              : {}),
+            ...(comparison.qlooAblation.creatorEvidenceCoverage !== undefined
+              ? { creatorEvidenceCoverage: comparison.qlooAblation.creatorEvidenceCoverage }
+              : {}),
             rankChanges: comparison.qlooAblation.rankChanges.map((change) => ({
               ...change,
             })),

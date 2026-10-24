@@ -30,9 +30,31 @@ export interface QlooInsightsInput {
   tagSignals?: QlooWeightedTag[]
   tagOperator?: "union" | "intersection"
   audienceIds?: string[]
+  audienceWeight?: number
   ageRange?: "35_and_younger" | "36_to_55" | "55_and_older"
+  gender?: "male" | "female"
   take: number
   explainability?: boolean
+}
+
+export interface QlooComparisonInput {
+  filterType: string
+  groupAEntityIds: string[]
+  groupBEntityIds: string[]
+  locationQuery?: string
+  take?: number
+}
+
+export interface QlooHeatmapInput {
+  locationQuery: string
+  boundary?: "geohash" | "city" | "neighborhood"
+  entityIds?: string[]
+  tagIds?: string[]
+  audienceIds?: string[]
+  audienceWeight?: number
+  ageRange?: "35_and_younger" | "36_to_55" | "55_and_older"
+  gender?: "male" | "female"
+  take?: number
 }
 
 export interface QlooClient {
@@ -43,6 +65,8 @@ export interface QlooClient {
   }): Promise<unknown>
   searchTags(input: { query: string; take: number }): Promise<unknown>
   getInsights(input: QlooInsightsInput): Promise<unknown>
+  compareInsights(input: QlooComparisonInput): Promise<unknown>
+  getHeatmap(input: QlooHeatmapInput): Promise<unknown>
   getLocationTaste(input: {
     locationQuery: string
     filterType: "urn:tag"
@@ -55,6 +79,7 @@ interface QlooClientOptions {
   baseUrl?: string
   searchUrl?: string
   insightsUrl?: string
+  compareUrl?: string
   tagsUrl?: string
   apiKey?: string
   fetchImpl?: JsonFetcher
@@ -112,10 +137,16 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
           ? { "operator.signal.interests.tags": input.tagOperator }
           : {}),
         ...(input.audienceIds && input.audienceIds.length > 0
-          ? { "signal.demographics.audiences": input.audienceIds.join(",") }
+          ? { "signal.demographics.audiences": input.audienceIds }
+          : {}),
+        ...(input.audienceWeight !== undefined
+          ? { "signal.demographics.audiences.weight": input.audienceWeight }
           : {}),
         ...(input.ageRange
           ? { "signal.demographics.age": input.ageRange }
+          : {}),
+        ...(input.gender
+          ? { "signal.demographics.gender": input.gender }
           : {}),
         ...(input.explainability !== undefined
           ? { "feature.explainability": input.explainability }
@@ -133,6 +164,65 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         }
+      )
+    },
+    async compareInsights(input) {
+      const url = new URL(config.compareUrl)
+      url.searchParams.set(
+        "a.signal.interests.entities",
+        input.groupAEntityIds.join(",")
+      )
+      url.searchParams.set(
+        "b.signal.interests.entities",
+        input.groupBEntityIds.join(",")
+      )
+      url.searchParams.set("filter.type", input.filterType)
+      if (input.locationQuery)
+        url.searchParams.set("filter.location.query", input.locationQuery)
+      if (input.take !== undefined) url.searchParams.set("take", String(input.take))
+      return requestProviderJson(
+        fetchImpl,
+        url,
+        config.apiKey,
+        config.timeoutMs,
+        "qloo",
+        z.unknown()
+      )
+    },
+    async getHeatmap(input) {
+      const url = new URL(config.insightsUrl)
+      url.searchParams.set("filter.type", "urn:heatmap")
+      url.searchParams.set("filter.location.query", input.locationQuery)
+      url.searchParams.set(
+        "output.heatmap.boundary",
+        input.boundary ?? "geohash"
+      )
+      if (input.entityIds && input.entityIds.length > 0)
+        url.searchParams.set("signal.interests.entities", input.entityIds.join(","))
+      if (input.tagIds && input.tagIds.length > 0)
+        url.searchParams.set("signal.interests.tags", input.tagIds.join(","))
+      if (input.audienceIds && input.audienceIds.length > 0)
+        url.searchParams.set(
+          "signal.demographics.audiences",
+          input.audienceIds.join(",")
+        )
+      if (input.audienceWeight !== undefined)
+        url.searchParams.set(
+          "signal.demographics.audiences.weight",
+          String(input.audienceWeight)
+        )
+      if (input.ageRange)
+        url.searchParams.set("signal.demographics.age", input.ageRange)
+      if (input.gender)
+        url.searchParams.set("signal.demographics.gender", input.gender)
+      if (input.take !== undefined) url.searchParams.set("take", String(input.take))
+      return requestProviderJson(
+        fetchImpl,
+        url,
+        config.apiKey,
+        config.timeoutMs,
+        "qloo",
+        z.unknown()
       )
     },
     async getLocationTaste(input) {
@@ -171,6 +261,7 @@ function readQlooConfig(options: QlooClientOptions): {
   baseUrl: string
   searchUrl: string
   insightsUrl: string
+  compareUrl: string
   tagsUrl: string
   apiKey: string
   timeoutMs: number
@@ -178,6 +269,7 @@ function readQlooConfig(options: QlooClientOptions): {
   const baseUrl = options.baseUrl ?? process.env.QLOO_BASE_URL
   const searchUrl = options.searchUrl ?? process.env.QLOO_SEARCH_URL
   const insightsUrl = options.insightsUrl ?? process.env.QLOO_INSIGHTS_URL
+  const compareUrl = options.compareUrl ?? process.env.QLOO_COMPARE_URL
   const tagsUrl = options.tagsUrl ?? process.env.QLOO_TAGS_URL
   const apiKey = options.apiKey ?? process.env.QLOO_API_KEY
 
@@ -193,6 +285,10 @@ function readQlooConfig(options: QlooClientOptions): {
   const parsedBase = parseProviderUrl(baseUrl, "Qloo base URL")
   const parsedSearch = parseProviderUrl(searchUrl, "Qloo search URL")
   const parsedInsights = parseProviderUrl(insightsUrl, "Qloo insights URL")
+  const parsedCompare = parseProviderUrl(
+    compareUrl ?? new URL("/v2/insights/compare", parsedBase).toString(),
+    "Qloo comparison URL"
+  )
   const parsedTags = parseProviderUrl(
     tagsUrl ?? new URL("/v2/tags", parsedBase).toString(),
     "Qloo tags URL"
@@ -201,6 +297,7 @@ function readQlooConfig(options: QlooClientOptions): {
   if (
     parsedSearch.origin !== parsedBase.origin ||
     parsedInsights.origin !== parsedBase.origin ||
+    parsedCompare.origin !== parsedBase.origin ||
     parsedTags.origin !== parsedBase.origin
   ) {
     throw new ProviderError({
@@ -215,6 +312,7 @@ function readQlooConfig(options: QlooClientOptions): {
     baseUrl: parsedBase.toString(),
     searchUrl: parsedSearch.toString(),
     insightsUrl: parsedInsights.toString(),
+    compareUrl: parsedCompare.toString(),
     tagsUrl: parsedTags.toString(),
     apiKey,
     timeoutMs: readPositiveInteger(

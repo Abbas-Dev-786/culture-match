@@ -24,6 +24,10 @@ export type CampaignRow = {
   max_followers: number | null
   max_budget: number | null
   currency: string | null
+  qloo_audience_ids: string[]
+  qloo_audience_weight: number | null
+  qloo_age_range: "35_and_younger" | "36_to_55" | "55_and_older" | null
+  qloo_gender: "male" | "female" | null
   creator_limit: number
   status: CampaignStatus
   created_at: string
@@ -46,6 +50,10 @@ export type CampaignInsert = {
   max_followers?: number | null
   max_budget?: number | null
   currency?: string | null
+  qloo_audience_ids?: string[]
+  qloo_audience_weight?: number | null
+  qloo_age_range?: "35_and_younger" | "36_to_55" | "55_and_older" | null
+  qloo_gender?: "male" | "female" | null
   creator_limit: number
   status?: CampaignStatus
   created_at?: string

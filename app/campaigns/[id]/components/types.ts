@@ -48,9 +48,42 @@ export interface CultureProfileView {
       inputWeight?: number
       sourceGroup: "market" | "brand" | "product" | "reference" | "combined" | "creator"
     }>
+    layers: Array<{
+      group: "market" | "brand" | "product" | "reference" | "combined"
+      label: string
+      signals: Array<{
+        signalId: string
+        kind: "entity" | "tag" | "audience" | "locality"
+        name: string
+        types: string[]
+        affinity?: number
+        inputWeight?: number
+        sourceGroup: "market" | "brand" | "product" | "reference" | "combined" | "creator"
+      }>
+      unresolvedInputs: string[]
+      operator?: "union" | "intersection"
+      entitySignalCount: number
+      tagSignalCount: number
+    }>
     unresolvedInputs: string[]
+    conditioning?: {
+      audienceIds: string[]
+      audienceWeight?: number
+      ageRange?: "35_and_younger" | "36_to_55" | "55_and_older"
+      gender?: "male" | "female"
+    }
     tagOperator?: "union" | "intersection"
     explainabilityRequested: boolean
+    comparison?: {
+      groupA: string
+      groupB: string
+      resultCount: number
+      topResults: Array<{ signalId: string; name?: string; types: string[]; affinity?: number }>
+    }
+    heatmap?: {
+      boundary: "geohash" | "city" | "neighborhood"
+      points: Array<{ latitude: number; longitude: number; geohash?: string; affinity?: number; affinityRank?: number; popularity?: number }>
+    }
   }
 }
 
@@ -101,6 +134,10 @@ export interface ComparisonView {
     scoredCreatorCount: number
     averageScoreDelta: number
     materiallyChanged: boolean
+    creatorSignalCount?: number
+    resolvedCreatorSignalCount?: number
+    unresolvedCreatorSignalCount?: number
+    creatorEvidenceCoverage?: number
     rankChanges: Array<{
       providerCreatorId: string
       withQlooRank?: number

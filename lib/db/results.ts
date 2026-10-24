@@ -6,7 +6,12 @@ import type {
   BaselineComparison,
   CultureSignal,
   EvidenceRef,
+  QlooAgeRange,
+  QlooComparisonSummary,
   QlooFingerprint,
+  QlooFingerprintLayer,
+  QlooHeatmap,
+  QlooGender,
   QlooSignalRecord,
   SafeCultureProfile,
   SafeCultureReference,
@@ -189,6 +194,9 @@ function readFingerprint(value: Json | undefined): QlooFingerprint | undefined {
   if (!Array.isArray(value.signals)) return undefined
   const signals = value.signals.flatMap(readQlooSignal)
   if (signals.length === 0) return undefined
+  const layers = Array.isArray(value.layers)
+    ? value.layers.flatMap(readQlooLayer)
+    : []
   const unresolvedInputs = Array.isArray(value.unresolvedInputs)
     ? value.unresolvedInputs.filter(isString)
     : []
@@ -204,11 +212,107 @@ function readFingerprint(value: Json | undefined): QlooFingerprint | undefined {
         : {}),
     },
     signals,
+    layers,
     unresolvedInputs,
+    ...(readQlooConditioning(value.conditioning)
+      ? { conditioning: readQlooConditioning(value.conditioning) }
+      : {}),
     ...(value.tagOperator === "union" || value.tagOperator === "intersection"
       ? { tagOperator: value.tagOperator }
       : {}),
     explainabilityRequested: value.explainabilityRequested === true,
+    ...(readQlooComparison(value.comparison)
+      ? { comparison: readQlooComparison(value.comparison) }
+      : {}),
+    ...(readQlooHeatmap(value.heatmap)
+      ? { heatmap: readQlooHeatmap(value.heatmap) }
+      : {}),
+  }
+}
+
+function readQlooConditioning(
+  value: Json | undefined
+): QlooFingerprint["conditioning"] | undefined {
+  if (!isObject(value) || !Array.isArray(value.audienceIds)) return undefined
+  return {
+    audienceIds: value.audienceIds.filter(isString),
+    ...(typeof value.audienceWeight === "number"
+      ? { audienceWeight: value.audienceWeight }
+      : {}),
+    ...(isAgeRange(value.ageRange) ? { ageRange: value.ageRange } : {}),
+    ...(isGender(value.gender) ? { gender: value.gender } : {}),
+  }
+}
+
+function readQlooLayer(value: Json): QlooFingerprintLayer[] {
+  if (!isObject(value) || typeof value.group !== "string" || typeof value.label !== "string") return []
+  if (
+    value.group !== "market" &&
+    value.group !== "brand" &&
+    value.group !== "product" &&
+    value.group !== "reference" &&
+    value.group !== "combined"
+  ) return []
+  if (!Array.isArray(value.signals)) return []
+  const signals = value.signals.flatMap(readQlooSignal)
+  return [
+    {
+      group: value.group,
+      label: value.label,
+      signals,
+      unresolvedInputs: Array.isArray(value.unresolvedInputs)
+        ? value.unresolvedInputs.filter(isString)
+        : [],
+      ...(value.operator === "union" || value.operator === "intersection"
+        ? { operator: value.operator }
+        : {}),
+      entitySignalCount:
+        typeof value.entitySignalCount === "number" ? value.entitySignalCount : 0,
+      tagSignalCount:
+        typeof value.tagSignalCount === "number" ? value.tagSignalCount : 0,
+    },
+  ]
+}
+
+function readQlooComparison(value: Json | undefined): QlooComparisonSummary | undefined {
+  if (
+    !isObject(value) ||
+    typeof value.groupA !== "string" ||
+    typeof value.groupB !== "string" ||
+    typeof value.resultCount !== "number" ||
+    !Array.isArray(value.topResults)
+  ) return undefined
+  return {
+    groupA: value.groupA,
+    groupB: value.groupB,
+    resultCount: value.resultCount,
+    topResults: value.topResults.flatMap((item) => {
+      if (!isObject(item) || typeof item.signalId !== "string" || !Array.isArray(item.types)) return []
+      return [{
+        signalId: item.signalId,
+        ...(typeof item.name === "string" ? { name: item.name } : {}),
+        types: item.types.filter(isString),
+        ...(typeof item.affinity === "number" ? { affinity: item.affinity } : {}),
+      }]
+    }),
+  }
+}
+
+function readQlooHeatmap(value: Json | undefined): QlooHeatmap | undefined {
+  if (!isObject(value) || !isHeatmapBoundary(value.boundary) || !Array.isArray(value.points)) return undefined
+  return {
+    boundary: value.boundary,
+    points: value.points.flatMap((item) => {
+      if (!isObject(item) || typeof item.latitude !== "number" || typeof item.longitude !== "number") return []
+      return [{
+        latitude: item.latitude,
+        longitude: item.longitude,
+        ...(typeof item.geohash === "string" ? { geohash: item.geohash } : {}),
+        ...(typeof item.affinity === "number" ? { affinity: item.affinity } : {}),
+        ...(typeof item.affinityRank === "number" ? { affinityRank: item.affinityRank } : {}),
+        ...(typeof item.popularity === "number" ? { popularity: item.popularity } : {}),
+      }]
+    }),
   }
 }
 
@@ -433,6 +537,18 @@ function readQlooAblation(
     scoredCreatorCount: value.scoredCreatorCount,
     averageScoreDelta: value.averageScoreDelta,
     materiallyChanged: value.materiallyChanged,
+    ...(typeof value.creatorSignalCount === "number"
+      ? { creatorSignalCount: value.creatorSignalCount }
+      : {}),
+    ...(typeof value.resolvedCreatorSignalCount === "number"
+      ? { resolvedCreatorSignalCount: value.resolvedCreatorSignalCount }
+      : {}),
+    ...(typeof value.unresolvedCreatorSignalCount === "number"
+      ? { unresolvedCreatorSignalCount: value.unresolvedCreatorSignalCount }
+      : {}),
+    ...(typeof value.creatorEvidenceCoverage === "number"
+      ? { creatorEvidenceCoverage: value.creatorEvidenceCoverage }
+      : {}),
     rankChanges: value.rankChanges.flatMap((item) => {
       if (!isObject(item) || typeof item.providerCreatorId !== "string") return []
       return [
@@ -522,4 +638,18 @@ function isQlooGroup(
     value === "combined" ||
     value === "creator"
   )
+}
+
+function isHeatmapBoundary(
+  value: Json | undefined
+): value is QlooHeatmap["boundary"] {
+  return value === "geohash" || value === "city" || value === "neighborhood"
+}
+
+function isAgeRange(value: Json | undefined): value is QlooAgeRange {
+  return value === "35_and_younger" || value === "36_to_55" || value === "55_and_older"
+}
+
+function isGender(value: Json | undefined): value is QlooGender {
+  return value === "male" || value === "female"
 }

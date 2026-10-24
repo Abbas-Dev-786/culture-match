@@ -65,3 +65,27 @@ test("matching results migration stores both search variants and scored evidence
   assert.match(sql, /campaign_concept jsonb/)
   assert.match(sql, /comparison_metadata jsonb/)
 })
+
+test("Qloo conditioning migration stores explicit audience and demographic inputs", async () => {
+  const sql = await readFile(
+    new URL("./migrations/0005_qloo_conditioning.sql", import.meta.url),
+    "utf8"
+  )
+  assert.match(sql, /qloo_audience_ids text\[\]/)
+  assert.match(sql, /qloo_audience_weight numeric/)
+  assert.match(sql, /qloo_age_range text/)
+  assert.match(sql, /qloo_gender text/)
+  assert.match(sql, /campaigns_qloo_age_range_check/)
+})
+
+test("canonical Supabase Qloo conditioning migration is present", async () => {
+  const sql = await readFile(
+    new URL(
+      "../../supabase/migrations/20261024100000_qloo_conditioning.sql",
+      import.meta.url
+    ),
+    "utf8"
+  )
+  assert.match(sql, /qloo_audience_ids text\[\]/)
+  assert.match(sql, /campaigns_qloo_gender_check/)
+})

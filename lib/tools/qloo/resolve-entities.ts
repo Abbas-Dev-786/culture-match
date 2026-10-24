@@ -119,6 +119,8 @@ export function entitySignals(entities: ResolvedEntity[]): CultureSignal[] {
         name: entity.name,
         types: entity.types ?? [],
         evidence: entity.evidence,
+        kind: "entity" as const,
+        sourceGroup: "reference" as const,
       },
     ]
   })

@@ -36,6 +36,19 @@ export function BaselineComparison({
             ? "Cultural signals changed the shortlist or ranking. Review the movement and evidence below."
             : "The cultural signals did not materially change this shortlist; that is a valid result for this brief."}
         </p>
+        {comparison.qlooAblation ? (
+          <div className="rounded-xl border bg-muted/30 p-4 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-medium">Measured Qloo contribution</p>
+              <Badge variant={comparison.qlooAblation.materiallyChanged ? "secondary" : "outline"}>
+                {comparison.qlooAblation.materiallyChanged ? "Ranking changed" : "No ranking change"}
+              </Badge>
+            </div>
+            <p className="mt-1 text-muted-foreground">
+              Compared with the same creator set scored without Qloo resonance: {comparison.qlooAblation.scoredCreatorCount} creators scored, average score delta {comparison.qlooAblation.averageScoreDelta > 0 ? "+" : ""}{comparison.qlooAblation.averageScoreDelta}.
+            </p>
+          </div>
+        ) : null}
         <Tabs defaultValue="culture" className="w-full">
           <TabsList className="w-full sm:w-auto">
             <TabsTrigger value="culture">Culture-informed ({cultureInformed.length})</TabsTrigger>

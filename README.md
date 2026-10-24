@@ -25,7 +25,7 @@ copy lib\\phase-0\\env.example .env.local
 
 Configure Supabase, Qloo, and Apify server credentials in `.env.local`. OpenRouter is optional and only used when both `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` are set with the relevant feature flag enabled.
 
-Apply the SQL migrations in `lib/db/migrations` to the Supabase project before running a campaign.
+Apply the SQL migrations in `supabase/migrations` to the Supabase project before running a campaign. The `lib/db/migrations` directory is retained as the reviewed SQL source used by the migration tests; new deployments should use the canonical Supabase folder.
 
 Start the development server:
 

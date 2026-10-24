@@ -3,6 +3,10 @@ import { readFile } from "node:fs/promises"
 import test from "node:test"
 
 const migrationPath = new URL("./migrations/0001_foundation.sql", import.meta.url)
+const canonicalMigrationPath = new URL(
+  "../../supabase/migrations/20261023053521_foundation.sql",
+  import.meta.url
+)
 
 test("foundation migration defines all core tables and owner RLS", async () => {
   const sql = await readFile(migrationPath, "utf8")
@@ -22,6 +26,14 @@ test("foundation migration defines all core tables and owner RLS", async () => {
   assert.match(sql, /with check \(\(select auth\.uid\(\)\) = user_id\)/)
   assert.match(sql, /revoke all [\s\S]* from public, anon/)
   assert.doesNotMatch(sql, /user_metadata/)
+})
+
+test("canonical Supabase foundation matches the application schema", async () => {
+  const sql = await readFile(canonicalMigrationPath, "utf8")
+  assert.match(sql, /market_scope text not null/)
+  assert.match(sql, /cultural_references text\[\]/)
+  assert.match(sql, /normalized_payload jsonb/)
+  assert.doesNotMatch(sql, /target_demographics text not null/)
 })
 
 test("security hardening migration does not expose the RLS event trigger", async () => {

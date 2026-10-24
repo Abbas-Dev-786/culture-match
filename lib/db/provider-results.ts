@@ -9,6 +9,7 @@ import type {
   Database,
   CultureProfileInsert,
   CreatorCandidateInsert,
+  Json,
 } from "@/lib/db/database.types"
 import { ApplicationError } from "@/lib/errors"
 
@@ -128,6 +129,11 @@ function signalToJson(signal: CultureSignal): JsonObject {
     name: signal.name,
     types: signal.types,
     ...(signal.affinity !== undefined ? { affinity: signal.affinity } : {}),
+    ...(signal.kind ? { kind: signal.kind } : {}),
+    ...(signal.inputWeight !== undefined
+      ? { inputWeight: signal.inputWeight }
+      : {}),
+    ...(signal.sourceGroup ? { sourceGroup: signal.sourceGroup } : {}),
     evidence: evidenceToJson(signal.evidence),
   }
 }
@@ -170,6 +176,29 @@ function creatorToJson(creator: NormalizedCreator): JsonObject {
     ...(creator.providerMatchScore !== undefined
       ? { providerMatchScore: creator.providerMatchScore }
       : {}),
+    contentSignals: creator.contentSignals.map((signal) => ({
+      text: signal.text,
+      sourceField: signal.sourceField,
+      evidence: evidenceToJson(signal.evidence),
+    })),
+    ...(creator.qlooSignals
+      ? {
+          qlooSignals: creator.qlooSignals.map((signal) => ({
+            signalId: signal.signalId,
+            kind: signal.kind,
+            name: signal.name,
+            types: signal.types,
+            ...(signal.affinity !== undefined
+              ? { affinity: signal.affinity }
+              : {}),
+            ...(signal.inputWeight !== undefined
+              ? { inputWeight: signal.inputWeight }
+              : {}),
+            sourceGroup: signal.sourceGroup,
+            evidence: evidenceToJson(signal.evidence),
+          })),
+        }
+      : {}),
   }
 }
 
@@ -205,6 +234,13 @@ function readSignals(value: unknown): CultureSignal[] {
         ...(typeof item.affinity === "number"
           ? { affinity: item.affinity }
           : {}),
+        ...(isQlooKind(item.kind) ? { kind: item.kind } : {}),
+        ...(typeof item.inputWeight === "number"
+          ? { inputWeight: item.inputWeight }
+          : {}),
+        ...(isQlooGroup(item.sourceGroup)
+          ? { sourceGroup: item.sourceGroup }
+          : {}),
         evidence: {
           source: isEvidenceSource(evidence.source)
             ? evidence.source
@@ -225,6 +261,16 @@ function readSignals(value: unknown): CultureSignal[] {
       },
     ]
   })
+}
+
+function isQlooKind(value: Json | undefined): value is CultureSignal["kind"] {
+  return value === "entity" || value === "tag" || value === "audience" || value === "locality"
+}
+
+function isQlooGroup(
+  value: Json | undefined
+): value is CultureSignal["sourceGroup"] {
+  return value === "market" || value === "brand" || value === "product" || value === "reference" || value === "combined" || value === "creator"
 }
 
 function isJsonObject(value: unknown): value is JsonObject {

@@ -1,4 +1,5 @@
 import type {
+  CreatorContentSignal,
   NormalizedCreator,
   JsonObject,
   EvidenceRef,
@@ -104,6 +105,7 @@ function normalizeCreator(
 
   const evidence: EvidenceRef[] = []
   const bio = readString(creator.bio)
+  const contentSignals = extractContentSignals(value, bio, observedAt)
   const username = readString(profile.username)
   const profileUrl = readString(profile.url)
   const followers = readNonNegativeNumber(profile.followers)
@@ -122,6 +124,7 @@ function normalizeCreator(
     engagementRate === undefined ? "engagementRate" : undefined,
     isVerified === undefined ? "isVerified" : undefined,
     bio === undefined ? "bio" : undefined,
+    contentSignals.length === 0 ? "contentSignals" : undefined,
     locationUnverified ? "audienceLocations" : undefined,
     "languages",
     "fees",
@@ -188,6 +191,7 @@ function normalizeCreator(
       locationUnverified,
       ...(providerMatchScore !== undefined ? { providerMatchScore } : {}),
       missingFields,
+      contentSignals,
       sourceFields: {
         ...(bio ? { bio } : {}),
         ...(username ? { username } : {}),
@@ -197,10 +201,55 @@ function normalizeCreator(
         ...(isVerified !== undefined ? { isVerified } : {}),
         locationUnverified,
         ...(providerMatchScore !== undefined ? { providerMatchScore } : {}),
+        contentSignals: contentSignals.map((signal) => signal.text),
       },
       evidence,
     },
   ]
+}
+
+function extractContentSignals(
+  value: Record<string, unknown>,
+  bio: string | undefined,
+  observedAt: string
+): CreatorContentSignal[] {
+  const signals: CreatorContentSignal[] = []
+  if (bio) {
+    signals.push({
+      text: bio,
+      sourceField: "$.creator.bio",
+      evidence: fieldEvidence("$.creator.bio", observedAt, bio),
+    })
+  }
+
+  for (const collectionKey of ["posts", "recent_posts", "content"]) {
+    const collection = value[collectionKey]
+    if (!Array.isArray(collection)) continue
+    for (const [index, item] of collection.entries()) {
+      if (!isRecord(item)) continue
+      const text =
+        readString(item.caption) ??
+        readString(item.text) ??
+        readString(item.description)
+      const hashtags = readStringArray(item.hashtags)
+      const content = [text, ...hashtags].filter(
+        (part): part is string => Boolean(part)
+      )
+      if (content.length === 0) continue
+      const excerpt = content.join(" ").slice(0, 500)
+      signals.push({
+        text: excerpt,
+        sourceField: `$.${collectionKey}[${index}]`,
+        evidence: fieldEvidence(
+          `$.${collectionKey}[${index}]`,
+          observedAt,
+          excerpt
+        ),
+      })
+      if (signals.length >= 20) return signals
+    }
+  }
+  return signals
 }
 
 function fieldEvidence(
@@ -224,6 +273,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is string =>
+          typeof item === "string" && item.trim().length > 0
+      )
+    : []
 }
 
 function readNonNegativeNumber(value: unknown): number | undefined {

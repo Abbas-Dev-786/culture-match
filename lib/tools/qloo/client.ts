@@ -7,9 +7,33 @@ import {
 import {
   qlooEntitySearchResponseSchema,
   qlooInsightsResponseSchema,
+  qlooTagSearchResponseSchema,
 } from "../../validation/provider-payloads.ts"
 
 type JsonFetcher = (input: string, init?: RequestInit) => Promise<Response>
+
+export interface QlooWeightedEntity {
+  entity: string
+  weight?: number
+}
+
+export interface QlooWeightedTag {
+  tag: string
+  weight?: number
+}
+
+export interface QlooInsightsInput {
+  filterType: string
+  locationQuery?: string
+  locationId?: string
+  entitySignals?: QlooWeightedEntity[]
+  tagSignals?: QlooWeightedTag[]
+  tagOperator?: "union" | "intersection"
+  audienceIds?: string[]
+  ageRange?: "35_and_younger" | "36_to_55" | "55_and_older"
+  take: number
+  explainability?: boolean
+}
 
 export interface QlooClient {
   searchEntities(input: {
@@ -17,6 +41,8 @@ export interface QlooClient {
     types: string
     take: number
   }): Promise<unknown>
+  searchTags(input: { query: string; take: number }): Promise<unknown>
+  getInsights(input: QlooInsightsInput): Promise<unknown>
   getLocationTaste(input: {
     locationQuery: string
     filterType: "urn:tag"
@@ -29,6 +55,7 @@ interface QlooClientOptions {
   baseUrl?: string
   searchUrl?: string
   insightsUrl?: string
+  tagsUrl?: string
   apiKey?: string
   fetchImpl?: JsonFetcher
   timeoutMs?: number
@@ -52,6 +79,60 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
         config.timeoutMs,
         "qloo",
         qlooEntitySearchResponseSchema
+      )
+    },
+    async searchTags(input) {
+      const url = new URL(config.tagsUrl)
+      url.searchParams.set("query", input.query)
+      url.searchParams.set("take", String(input.take))
+      return requestProviderJson(
+        fetchImpl,
+        url,
+        config.apiKey,
+        config.timeoutMs,
+        "qloo",
+        qlooTagSearchResponseSchema
+      )
+    },
+    async getInsights(input) {
+      const body: Record<string, unknown> = {
+        "filter.type": input.filterType,
+        take: input.take,
+        ...(input.locationQuery
+          ? { "signal.location.query": input.locationQuery }
+          : {}),
+        ...(input.locationId ? { "signal.location": input.locationId } : {}),
+        ...(input.entitySignals && input.entitySignals.length > 0
+          ? { "signal.interests.entities": input.entitySignals }
+          : {}),
+        ...(input.tagSignals && input.tagSignals.length > 0
+          ? { "signal.interests.tags": input.tagSignals }
+          : {}),
+        ...(input.tagOperator
+          ? { "operator.signal.interests.tags": input.tagOperator }
+          : {}),
+        ...(input.audienceIds && input.audienceIds.length > 0
+          ? { "signal.demographics.audiences": input.audienceIds.join(",") }
+          : {}),
+        ...(input.ageRange
+          ? { "signal.demographics.age": input.ageRange }
+          : {}),
+        ...(input.explainability !== undefined
+          ? { "feature.explainability": input.explainability }
+          : {}),
+      }
+      return requestProviderJson(
+        fetchImpl,
+        new URL(config.insightsUrl),
+        config.apiKey,
+        config.timeoutMs,
+        "qloo",
+        qlooInsightsResponseSchema,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
       )
     },
     async getLocationTaste(input) {
@@ -90,12 +171,14 @@ function readQlooConfig(options: QlooClientOptions): {
   baseUrl: string
   searchUrl: string
   insightsUrl: string
+  tagsUrl: string
   apiKey: string
   timeoutMs: number
 } {
   const baseUrl = options.baseUrl ?? process.env.QLOO_BASE_URL
   const searchUrl = options.searchUrl ?? process.env.QLOO_SEARCH_URL
   const insightsUrl = options.insightsUrl ?? process.env.QLOO_INSIGHTS_URL
+  const tagsUrl = options.tagsUrl ?? process.env.QLOO_TAGS_URL
   const apiKey = options.apiKey ?? process.env.QLOO_API_KEY
 
   if (!baseUrl || !searchUrl || !insightsUrl || !apiKey) {
@@ -110,10 +193,15 @@ function readQlooConfig(options: QlooClientOptions): {
   const parsedBase = parseProviderUrl(baseUrl, "Qloo base URL")
   const parsedSearch = parseProviderUrl(searchUrl, "Qloo search URL")
   const parsedInsights = parseProviderUrl(insightsUrl, "Qloo insights URL")
+  const parsedTags = parseProviderUrl(
+    tagsUrl ?? new URL("/v2/tags", parsedBase).toString(),
+    "Qloo tags URL"
+  )
 
   if (
     parsedSearch.origin !== parsedBase.origin ||
-    parsedInsights.origin !== parsedBase.origin
+    parsedInsights.origin !== parsedBase.origin ||
+    parsedTags.origin !== parsedBase.origin
   ) {
     throw new ProviderError({
       provider: "qloo",
@@ -127,6 +215,7 @@ function readQlooConfig(options: QlooClientOptions): {
     baseUrl: parsedBase.toString(),
     searchUrl: parsedSearch.toString(),
     insightsUrl: parsedInsights.toString(),
+    tagsUrl: parsedTags.toString(),
     apiKey,
     timeoutMs: readPositiveInteger(
       options.timeoutMs ?? Number(process.env.QLOO_TIMEOUT_MS),
@@ -138,7 +227,7 @@ function readQlooConfig(options: QlooClientOptions): {
 function parseProviderUrl(value: string, label: string): URL {
   try {
     const url = new URL(value)
-    if (!url.protocol.startsWith("http"))
+    if (url.protocol !== "http:" && url.protocol !== "https:")
       throw new Error("unsupported protocol")
     return url
   } catch {
@@ -157,14 +246,20 @@ async function requestProviderJson<T>(
   apiKey: string,
   timeoutMs: number,
   provider: "qloo" | "apify",
-  schema: z.ZodType<T>
+  schema: z.ZodType<T>,
+  init: RequestInit = {}
 ): Promise<T> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
     const response = await fetchImpl(url.toString(), {
-      headers: { Accept: "application/json", "X-Api-Key": apiKey },
+      ...init,
+      headers: {
+        Accept: "application/json",
+        "X-Api-Key": apiKey,
+        ...init.headers,
+      },
       signal: controller.signal,
     })
     const body = await readJson(response)

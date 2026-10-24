@@ -6,6 +6,13 @@ export const qlooEntitySearchResponseSchema = z.object({
   results: z.array(jsonObjectSchema),
 })
 
+export const qlooTagSearchResponseSchema = z.object({
+  results: z.union([
+    z.array(jsonObjectSchema),
+    z.object({ tags: z.array(jsonObjectSchema) }),
+  ]),
+})
+
 export const qlooInsightsResponseSchema = z.object({
   results: z.object({
     tags: z.array(jsonObjectSchema),

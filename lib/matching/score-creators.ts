@@ -31,14 +31,21 @@ export interface ScoredCreator {
   caveats: string[]
 }
 
+export interface ScoreOptions {
+  includeQlooResonance?: boolean
+}
+
 export function scoreCreators(
   brief: CampaignBrief,
   signals: CultureSignal[],
   creators: NormalizedCreator[],
-  observedAt = deterministicObservedAt(creators)
+  observedAt = deterministicObservedAt(creators),
+  options: ScoreOptions = {}
 ): ScoredCreator[] {
   return creators
-    .map((creator) => scoreCreator(brief, signals, creator, observedAt))
+    .map((creator) =>
+      scoreCreator(brief, signals, creator, observedAt, options)
+    )
     .sort((left, right) => compareScores(left.campaignFitScore, right.campaignFitScore))
 }
 
@@ -46,10 +53,16 @@ export function scoreCreator(
   brief: CampaignBrief,
   signals: CultureSignal[],
   creator: NormalizedCreator,
-  observedAt = DEFAULT_SCORE_OBSERVED_AT
+  observedAt = DEFAULT_SCORE_OBSERVED_AT,
+  options: ScoreOptions = {}
 ): ScoredCreator {
   const components = [
-    culturalComponent(signals, creator, observedAt),
+    culturalComponent(
+      signals,
+      creator,
+      observedAt,
+      options.includeQlooResonance !== false
+    ),
     contentComponent(brief, creator, observedAt),
     marketComponent(creator),
     engagementComponent(creator),
@@ -90,39 +103,64 @@ export function scoreCreator(
 function culturalComponent(
   signals: CultureSignal[],
   creator: NormalizedCreator,
-  observedAt: string
+  observedAt: string,
+  includeQlooResonance: boolean
 ): ScoreComponent {
-  if (signals.length === 0 || !creator.bio) {
+  if (!includeQlooResonance) {
     return unavailableComponent(
       "culturalAlignment",
-      "Cultural alignment",
+      "Qloo cultural resonance",
       scoreWeights.culturalAlignment,
-      "Qloo signals or creator content text is unavailable"
+      "Qloo resonance is excluded for the baseline or ablation comparison"
     )
   }
-  const creatorText = `${creator.name} ${creator.username ?? ""} ${creator.bio}`
-  const best = Math.max(...signals.map((signal) => lexicalSimilarity(signal.name, creatorText)))
-  const signalEvidence = signals
-    .slice(0, 3)
+
+  const qlooSignals = (creator.qlooSignals ?? []).filter(
+    (signal) => signal.affinity !== undefined
+  )
+  if (signals.length === 0 || qlooSignals.length === 0) {
+    return unavailableComponent(
+      "culturalAlignment",
+      "Qloo cultural resonance",
+      scoreWeights.culturalAlignment,
+      "Qloo did not resolve creator content signals with a location-conditioned affinity"
+    )
+  }
+
+  const totalWeight = qlooSignals.reduce(
+    (sum, signal) => sum + (signal.inputWeight ?? 1),
+    0
+  )
+  const weightedAffinity = qlooSignals.reduce(
+    (sum, signal) =>
+      sum + normalizeAffinity(signal.affinity ?? 0) * (signal.inputWeight ?? 1),
+    0
+  )
+  const score = totalWeight > 0 ? weightedAffinity / totalWeight : 0
+  const marketEvidence = signals
+    .filter((signal) =>
+      qlooSignals.some((creatorSignal) => creatorSignal.signalId === signal.signalId)
+    )
     .map((signal) => signal.evidence)
   const evidence = [
-    ...signalEvidence,
-    ...creator.evidence.filter((item) => item.fieldPath === "$.creator.bio"),
+    ...marketEvidence,
+    ...qlooSignals.map((signal) => signal.evidence),
+    ...creator.contentSignals.map((signal) => signal.evidence),
     derivedEvidence(
-      "Lexical cultural text match",
+      "Qloo content-to-market resonance",
       "$.derived.culturalAlignment",
       observedAt,
-      `Compared creator text with ${signals.length} Qloo labels`
+      `Weighted ${qlooSignals.length} creator signals against the target market`
     ),
   ]
   return {
     key: "culturalAlignment",
-    label: "Cultural alignment",
-    score: roundScore(best * 100),
+    label: "Qloo cultural resonance",
+    score: roundScore(score),
     weight: scoreWeights.culturalAlignment,
     availability: "conditional",
     rationale:
-      "Derived lexical similarity between returned Qloo labels and the provider bio; this is not audience-level affinity.",
+      "Location-conditioned Qloo affinity for resolved creator-content signals; this is not audience-level affinity.",
     evidence,
   }
 }
@@ -132,7 +170,13 @@ function contentComponent(
   creator: NormalizedCreator,
   observedAt: string
 ): ScoreComponent {
-  if (!creator.bio) {
+  const creatorText = [
+    creator.bio,
+    ...creator.contentSignals.map((signal) => signal.text),
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" ")
+  if (!creatorText) {
     return unavailableComponent(
       "contentFit",
       "Content and campaign fit",
@@ -141,7 +185,7 @@ function contentComponent(
     )
   }
   const targetText = `${brief.productCategory} ${brief.objective}`
-  const score = lexicalSimilarity(targetText, creator.bio) * 100
+  const score = lexicalSimilarity(targetText, creatorText) * 100
   return {
     key: "contentFit",
     label: "Content and campaign fit",
@@ -150,7 +194,7 @@ function contentComponent(
     availability: "conditional",
     rationale: "Derived lexical similarity between the campaign brief and the returned creator bio.",
     evidence: [
-      ...creator.evidence.filter((item) => item.fieldPath === "$.creator.bio"),
+      ...creator.contentSignals.map((signal) => signal.evidence),
       derivedEvidence(
         "Lexical campaign fit",
         "$.derived.contentFit",
@@ -282,6 +326,11 @@ function compareScores(left: number | null, right: number | null): number {
 
 function roundScore(value: number): number {
   return Math.round(Math.max(0, Math.min(100, value)) * 100) / 100
+}
+
+function normalizeAffinity(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return value <= 1 ? value * 100 : Math.min(value, 100)
 }
 
 function deterministicObservedAt(creators: NormalizedCreator[]): string {

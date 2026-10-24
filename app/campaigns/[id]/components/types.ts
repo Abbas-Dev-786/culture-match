@@ -36,6 +36,22 @@ export interface CultureProfileView {
   unresolvedReferences: string[]
   signalCount: number
   searchPlanSource?: "deterministic" | "model"
+  fingerprint?: {
+    locationQuery: string
+    location: { name: string; entityId?: string; disambiguation?: string }
+    signals: Array<{
+      signalId: string
+      kind: "entity" | "tag" | "audience" | "locality"
+      name: string
+      types: string[]
+      affinity?: number
+      inputWeight?: number
+      sourceGroup: "market" | "brand" | "product" | "reference" | "combined" | "creator"
+    }>
+    unresolvedInputs: string[]
+    tagOperator?: "union" | "intersection"
+    explainabilityRequested: boolean
+  }
 }
 
 export interface CampaignMatchView {
@@ -56,6 +72,8 @@ export interface CampaignMatchView {
   scoreComponents: ScoreComponentView[]
   evidence: EvidenceView[]
   caveats: string[]
+  contentSignals?: Array<{ text: string; sourceField: string }>
+  qlooSignals?: Array<{ name: string; affinity?: number; sourceGroup: string }>
   reportSummary?: string
   campaignConcept?: {
     title: string
@@ -79,6 +97,17 @@ export interface ComparisonView {
     cultureInformedRank?: number
     scoreDelta?: number
   }>
+  qlooAblation?: {
+    scoredCreatorCount: number
+    averageScoreDelta: number
+    materiallyChanged: boolean
+    rankChanges: Array<{
+      providerCreatorId: string
+      withQlooRank?: number
+      withoutQlooRank?: number
+      scoreDelta?: number
+    }>
+  }
 }
 
 export interface CampaignResultsResponse {

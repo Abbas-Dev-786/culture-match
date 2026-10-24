@@ -148,6 +148,18 @@ function comparisonToJson(comparison: BaselineComparison): JsonObject {
     cultureInformedOnlyIds: comparison.cultureInformedOnlyIds,
     rankChanges: comparison.rankChanges.map((change) => ({ ...change })),
     materiallyChanged: comparison.materiallyChanged,
+    ...(comparison.qlooAblation
+      ? {
+          qlooAblation: {
+            scoredCreatorCount: comparison.qlooAblation.scoredCreatorCount,
+            averageScoreDelta: comparison.qlooAblation.averageScoreDelta,
+            materiallyChanged: comparison.qlooAblation.materiallyChanged,
+            rankChanges: comparison.qlooAblation.rankChanges.map((change) => ({
+              ...change,
+            })),
+          },
+        }
+      : {}),
   }
 }
 

@@ -3,6 +3,7 @@ import type {
   Json,
 } from "@/lib/db/database.types"
 import type { EvidenceRef, NormalizedCreator, JsonObject } from "@/lib/domain/types"
+import type { CreatorContentSignal, QlooSignalRecord } from "@/lib/domain/types"
 
 export function normalizeStoredCreator(
   row: CreatorCandidateRow
@@ -30,9 +31,86 @@ export function normalizeStoredCreator(
     ...(row.provider_match_score !== null
       ? { providerMatchScore: row.provider_match_score }
       : {}),
+    contentSignals: readContentSignals(payload.contentSignals),
+    qlooSignals: readQlooSignals(payload.qlooSignals),
     missingFields: readStringArray(payload.missingFields),
     sourceFields: isJsonObject(payload.sourceFields) ? payload.sourceFields : {},
     evidence,
+  }
+}
+
+function readContentSignals(value: Json | undefined): CreatorContentSignal[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (!isJsonObject(item)) return []
+    if (
+      typeof item.text !== "string" ||
+      typeof item.sourceField !== "string" ||
+      !isEvidence(item.evidence)
+    )
+      return []
+    return [
+      {
+        text: item.text,
+        sourceField: item.sourceField,
+        evidence: readEvidenceItem(item.evidence),
+      },
+    ]
+  })
+}
+
+function readQlooSignals(value: Json | undefined): QlooSignalRecord[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (!isJsonObject(item)) return []
+    if (
+      typeof item.signalId !== "string" ||
+      typeof item.name !== "string" ||
+      !isQlooKind(item.kind) ||
+      !Array.isArray(item.types) ||
+      !isQlooGroup(item.sourceGroup) ||
+      !isEvidence(item.evidence)
+    )
+      return []
+    return [
+      {
+        signalId: item.signalId,
+        kind: item.kind,
+        name: item.name,
+        types: item.types.filter(isString),
+        ...(typeof item.affinity === "number"
+          ? { affinity: item.affinity }
+          : {}),
+        ...(typeof item.inputWeight === "number"
+          ? { inputWeight: item.inputWeight }
+          : {}),
+        sourceGroup: item.sourceGroup,
+        evidence: readEvidenceItem(item.evidence),
+      },
+    ]
+  })
+}
+
+function isEvidence(value: Json | undefined): boolean {
+  return isJsonObject(value) &&
+    typeof value.source === "string" &&
+    typeof value.fieldPath === "string" &&
+    typeof value.observedAt === "string" &&
+    isVerification(value.verification)
+}
+
+function readEvidenceItem(value: Json): EvidenceRef {
+  const item = value as JsonObject
+  return {
+    source: isEvidenceSource(item.source as string) ? item.source as EvidenceRef["source"] : "derived",
+    fieldPath: item.fieldPath as string,
+    observedAt: item.observedAt as string,
+    verification: item.verification as EvidenceRef["verification"],
+    ...(typeof item.label === "string" ? { label: item.label } : {}),
+    ...(typeof item.providerEntityId === "string"
+      ? { providerEntityId: item.providerEntityId }
+      : {}),
+    ...(typeof item.excerpt === "string" ? { excerpt: item.excerpt } : {}),
   }
 }
 
@@ -63,7 +141,19 @@ function readEvidence(value: Json): EvidenceRef[] {
   })
 }
 
-function isJsonObject(value: Json): value is JsonObject {
+function isString(value: Json): value is string {
+  return typeof value === "string"
+}
+
+function isQlooKind(value: Json | undefined): value is QlooSignalRecord["kind"] {
+  return value === "entity" || value === "tag" || value === "audience" || value === "locality"
+}
+
+function isQlooGroup(value: Json | undefined): value is QlooSignalRecord["sourceGroup"] {
+  return value === "market" || value === "brand" || value === "product" || value === "reference" || value === "combined" || value === "creator"
+}
+
+function isJsonObject(value: Json | undefined): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 

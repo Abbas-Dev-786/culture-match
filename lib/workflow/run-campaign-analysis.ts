@@ -1,5 +1,6 @@
 import type { AnalysisRunRow, CampaignRow } from "@/lib/db/database.types"
 import type {
+  BaselineComparison,
   CampaignBrief,
   CultureSignal,
   JsonObject,
@@ -33,6 +34,7 @@ import { startCreatorSearch } from "@/lib/tools/apify/search-creators"
 import { ProviderError } from "@/lib/tools/provider-errors"
 import { analyzeCulture } from "@/lib/tools/qloo/analyze-culture"
 import { createQlooClient } from "@/lib/tools/qloo/client"
+import { enrichCreatorsWithQloo } from "@/lib/tools/qloo/enrich-creators"
 import { withProviderRetry } from "@/lib/workflow/retry"
 import {
   actorPlanToJson,
@@ -330,15 +332,39 @@ async function advanceWorkflow(
   ) {
     run = await updateRunDatasetId(client, run, cultureResults.run.datasetId)
   }
+  let enrichedBaselineCreators = baselineResults.creators
+  let enrichedCultureCreators = cultureResults.creators
+  try {
+    const allCreators = [
+      ...baselineResults.creators,
+      ...cultureResults.creators,
+    ]
+    const enrichedCreators = await enrichCreatorsWithQloo(
+      allCreators,
+      locationQueryForCampaign(campaign),
+      createQlooClient()
+    )
+    const enrichedById = new Map(
+      enrichedCreators.map((creator) => [creator.providerCreatorId, creator])
+    )
+    enrichedBaselineCreators = baselineResults.creators.map(
+      (creator) => enrichedById.get(creator.providerCreatorId) ?? creator
+    )
+    enrichedCultureCreators = cultureResults.creators.map(
+      (creator) => enrichedById.get(creator.providerCreatorId) ?? creator
+    )
+  } catch {
+    // Cultural creator enrichment is additive. Qloo market research remains the source of truth.
+  }
   await saveCreatorCandidates(client, {
     ...runOwnership(run, campaign.id, userId),
     searchVariant: "baseline",
-    creators: baselineResults.creators,
+    creators: enrichedBaselineCreators,
   })
   await saveCreatorCandidates(client, {
     ...runOwnership(run, campaign.id, userId),
     searchVariant: "culture_informed",
-    creators: cultureResults.creators,
+    creators: enrichedCultureCreators,
   })
   logWorkflowEvent({
     campaignId: campaign.id,
@@ -375,17 +401,29 @@ async function scoreWorkflow(
   const baselineScores = scoreCreators(
     brief,
     signals,
-    baselineRows.map(normalizeStoredCreator)
+    baselineRows.map(normalizeStoredCreator),
+    undefined,
+    { includeQlooResonance: false }
   )
   const cultureScores = scoreCreators(
     brief,
     signals,
     cultureRows.map(normalizeStoredCreator)
   )
-  const comparison = compareRuns(
+  const cultureAblationScores = scoreCreators(
+    brief,
+    signals,
+    cultureRows.map(normalizeStoredCreator),
+    undefined,
+    { includeQlooResonance: false }
+  )
+  const comparison: BaselineComparison = {
+    ...compareRuns(
     rankedCreators(baselineScores),
     rankedCreators(cultureScores)
-  )
+    ),
+    qlooAblation: compareQlooAblation(cultureScores, cultureAblationScores),
+  }
 
   await saveCreatorMatches(client, {
     ...runOwnership(run, campaign.id, userId),
@@ -563,6 +601,65 @@ function campaignToBrief(campaign: CampaignRow): CampaignBrief {
     ...(campaign.currency ? { currency: campaign.currency } : {}),
     creatorLimit: campaign.creator_limit,
   }
+}
+
+function locationQueryForCampaign(campaign: CampaignRow): string {
+  return [campaign.market_city, campaign.market_region, campaign.market_country]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join(", ")
+}
+
+function compareQlooAblation(
+  withQloo: ReturnType<typeof scoreCreators>,
+  withoutQloo: ReturnType<typeof scoreCreators>
+): NonNullable<BaselineComparison["qlooAblation"]> {
+  const withoutMap = new Map(
+    withoutQloo.map((result, index) => [result.creator.providerCreatorId, {
+      rank: index + 1,
+      score: result.campaignFitScore,
+    }])
+  )
+  const withMap = new Map(
+    withQloo.map((result, index) => [result.creator.providerCreatorId, {
+      rank: index + 1,
+      score: result.campaignFitScore,
+    }])
+  )
+  const deltas = [...withMap.keys()].flatMap((providerCreatorId) => {
+    const withResult = withMap.get(providerCreatorId)
+    const withoutResult = withoutMap.get(providerCreatorId)
+    if (!withResult || !withoutResult) return []
+    return withResult.score !== null && withoutResult.score !== null
+      ? [withResult.score - withoutResult.score]
+      : []
+  })
+  const rankChanges = [...new Set([...withMap.keys(), ...withoutMap.keys()])]
+    .flatMap((providerCreatorId) => {
+      const withResult = withMap.get(providerCreatorId)
+      const withoutResult = withoutMap.get(providerCreatorId)
+      if (!withResult || !withoutResult) return []
+      const scoreDelta =
+        withResult.score !== null && withoutResult.score !== null
+          ? round(withResult.score - withoutResult.score)
+          : undefined
+      if (withResult.rank === withoutResult.rank && !scoreDelta) return []
+      return [{
+        providerCreatorId,
+        withQlooRank: withResult.rank,
+        withoutQlooRank: withoutResult.rank,
+        ...(scoreDelta !== undefined ? { scoreDelta } : {}),
+      }]
+    })
+  return {
+    scoredCreatorCount: deltas.length,
+    averageScoreDelta: deltas.length > 0 ? round(deltas.reduce((sum, value) => sum + value, 0) / deltas.length) : 0,
+    materiallyChanged: rankChanges.length > 0,
+    rankChanges,
+  }
+}
+
+function round(value: number): number {
+  return Math.round(value * 100) / 100
 }
 
 function runOwnership(

@@ -27,6 +27,21 @@ export function CreatorCard({ match }: { match: CampaignMatchView }) {
       </dl>
       {match.locationUnverified ? <p className="mt-3 text-xs text-muted-foreground">Audience geography was not verified by the provider.</p> : null}
       {match.bio ? <p className="mt-3 text-sm text-muted-foreground">{match.bio}</p> : null}
+      {match.contentSignals && match.contentSignals.length > 0 ? (
+        <div className="mt-3 rounded-lg border bg-muted/30 p-3 text-sm">
+          <p className="font-medium">Observed content signals</p>
+          <p className="mt-1 text-muted-foreground">
+            {match.contentSignals.slice(0, 3).map((signal) => signal.text).join(" · ")}
+          </p>
+          {match.qlooSignals && match.qlooSignals.length > 0 ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Qloo-resolved: {match.qlooSignals.map((signal) => `${signal.name}${signal.affinity !== undefined ? ` (${signal.affinity.toFixed(2)})` : ""}`).join(", ")}
+            </p>
+          ) : (
+            <p className="mt-2 text-xs text-muted-foreground">No creator-content signal was resolved by Qloo.</p>
+          )}
+        </div>
+      ) : null}
       {match.reportSummary ? <p className="mt-3 text-sm">{match.reportSummary}</p> : null}
       <MatchBreakdown match={match} />
       {match.campaignConcept ? (

@@ -6,11 +6,14 @@ import type {
   BaselineComparison,
   CultureSignal,
   EvidenceRef,
+  QlooFingerprint,
+  QlooSignalRecord,
   SafeCultureProfile,
   SafeCultureReference,
   ScoreComponent,
 } from "@/lib/domain/types"
 import { ApplicationError } from "@/lib/errors"
+import { normalizeStoredCreator } from "@/lib/matching/normalize-creator"
 
 export interface SafeCreatorResult {
   id: string
@@ -31,6 +34,8 @@ export interface SafeCreatorResult {
   scoreComponents: ScoreComponent[]
   evidence: EvidenceRef[]
   caveats: string[]
+  contentSignals?: Array<{ text: string; sourceField: string }>
+  qlooSignals?: Array<{ name: string; affinity?: number; sourceGroup: string }>
   reportSummary?: string
   campaignConcept?: {
     title: string
@@ -91,6 +96,7 @@ function toSafeResult(
   candidate: CreatorCandidateRow
 ): SafeCreatorResult {
   const campaignConcept = readCampaignConcept(match.campaign_concept)
+  const normalized = normalizeStoredCreator(candidate)
   return {
     id: candidate.id,
     variant: candidate.search_variant,
@@ -114,6 +120,25 @@ function toSafeResult(
     scoreComponents: readScoreComponents(match.score_components),
     evidence: readEvidence(match.evidence),
     caveats: readStringArray(match.caveats),
+    ...(normalized.contentSignals.length > 0
+      ? {
+          contentSignals: normalized.contentSignals.map((signal) => ({
+            text: signal.text,
+            sourceField: signal.sourceField,
+          })),
+        }
+      : {}),
+    ...(normalized.qlooSignals && normalized.qlooSignals.length > 0
+      ? {
+          qlooSignals: normalized.qlooSignals.map((signal) => ({
+            name: signal.name,
+            ...(signal.affinity !== undefined
+              ? { affinity: signal.affinity }
+              : {}),
+            sourceGroup: signal.sourceGroup,
+          })),
+        }
+      : {}),
     ...(match.report_summary ? { reportSummary: match.report_summary } : {}),
     ...(campaignConcept ? { campaignConcept } : {}),
   }
@@ -139,9 +164,11 @@ function toSafeCultureProfile(
     summary.searchPlanSource === "model" || summary.searchPlanSource === "deterministic"
       ? summary.searchPlanSource
       : undefined
+  const fingerprint = readFingerprint(summary.fingerprint)
 
   return {
     signals,
+    ...(fingerprint ? { fingerprint } : {}),
     ...(typeof summary.locationQuery === "string"
       ? { locationQuery: summary.locationQuery }
       : {}),
@@ -156,6 +183,83 @@ function toSafeCultureProfile(
   }
 }
 
+function readFingerprint(value: Json | undefined): QlooFingerprint | undefined {
+  if (!isObject(value) || typeof value.locationQuery !== "string") return undefined
+  if (!isObject(value.location) || typeof value.location.name !== "string") return undefined
+  if (!Array.isArray(value.signals)) return undefined
+  const signals = value.signals.flatMap(readQlooSignal)
+  if (signals.length === 0) return undefined
+  const unresolvedInputs = Array.isArray(value.unresolvedInputs)
+    ? value.unresolvedInputs.filter(isString)
+    : []
+  return {
+    locationQuery: value.locationQuery,
+    location: {
+      name: value.location.name,
+      ...(typeof value.location.entityId === "string"
+        ? { entityId: value.location.entityId }
+        : {}),
+      ...(typeof value.location.disambiguation === "string"
+        ? { disambiguation: value.location.disambiguation }
+        : {}),
+    },
+    signals,
+    unresolvedInputs,
+    ...(value.tagOperator === "union" || value.tagOperator === "intersection"
+      ? { tagOperator: value.tagOperator }
+      : {}),
+    explainabilityRequested: value.explainabilityRequested === true,
+  }
+}
+
+function readQlooSignal(value: Json): QlooSignalRecord[] {
+  if (
+    !isObject(value) ||
+    typeof value.signalId !== "string" ||
+    typeof value.name !== "string" ||
+    !Array.isArray(value.types) ||
+    !isQlooKind(value.kind) ||
+    !isQlooGroup(value.sourceGroup) ||
+    !isObject(value.evidence)
+  )
+    return []
+  if (
+    !isEvidenceSource(value.evidence.source) ||
+    typeof value.evidence.fieldPath !== "string" ||
+    typeof value.evidence.observedAt !== "string" ||
+    !isVerificationState(value.evidence.verification)
+  )
+    return []
+  return [
+    {
+      signalId: value.signalId,
+      kind: value.kind,
+      name: value.name,
+      types: value.types.filter(isString),
+      ...(typeof value.affinity === "number" ? { affinity: value.affinity } : {}),
+      ...(typeof value.inputWeight === "number"
+        ? { inputWeight: value.inputWeight }
+        : {}),
+      sourceGroup: value.sourceGroup,
+      evidence: {
+        source: value.evidence.source,
+        fieldPath: value.evidence.fieldPath,
+        observedAt: value.evidence.observedAt,
+        verification: value.evidence.verification,
+        ...(typeof value.evidence.label === "string"
+          ? { label: value.evidence.label }
+          : {}),
+        ...(typeof value.evidence.providerEntityId === "string"
+          ? { providerEntityId: value.evidence.providerEntityId }
+          : {}),
+        ...(typeof value.evidence.excerpt === "string"
+          ? { excerpt: value.evidence.excerpt }
+          : {}),
+      },
+    },
+  ]
+}
+
 function readCultureReference(value: Json): SafeCultureReference[] {
   if (!isObject(value) || typeof value.reference !== "string") return []
   if (
@@ -164,15 +268,14 @@ function readCultureReference(value: Json): SafeCultureReference[] {
     value.status !== "unresolved"
   )
     return []
+  const candidates = readReferenceCandidates(value.candidates)
   return [
     {
       reference: value.reference,
       status: value.status,
       ...(typeof value.entityId === "string" ? { entityId: value.entityId } : {}),
       ...(typeof value.name === "string" ? { name: value.name } : {}),
-      ...(readReferenceCandidates(value.candidates).length > 0
-        ? { candidates: readReferenceCandidates(value.candidates) }
-        : {}),
+      ...(candidates.length > 0 ? { candidates } : {}),
     },
   ]
 }
@@ -309,10 +412,48 @@ function readComparison(value: Json): BaselineComparison | undefined {
       ]
     }),
     materiallyChanged: value.materiallyChanged,
+    ...(readQlooAblation(value.qlooAblation)
+      ? { qlooAblation: readQlooAblation(value.qlooAblation) }
+      : {}),
   }
 }
 
-function isObject(value: Json): value is { [key: string]: Json } {
+function readQlooAblation(
+  value: Json | undefined
+): BaselineComparison["qlooAblation"] | undefined {
+  if (!isObject(value)) return undefined
+  if (
+    typeof value.scoredCreatorCount !== "number" ||
+    typeof value.averageScoreDelta !== "number" ||
+    typeof value.materiallyChanged !== "boolean" ||
+    !Array.isArray(value.rankChanges)
+  )
+    return undefined
+  return {
+    scoredCreatorCount: value.scoredCreatorCount,
+    averageScoreDelta: value.averageScoreDelta,
+    materiallyChanged: value.materiallyChanged,
+    rankChanges: value.rankChanges.flatMap((item) => {
+      if (!isObject(item) || typeof item.providerCreatorId !== "string") return []
+      return [
+        {
+          providerCreatorId: item.providerCreatorId,
+          ...(typeof item.withQlooRank === "number"
+            ? { withQlooRank: item.withQlooRank }
+            : {}),
+          ...(typeof item.withoutQlooRank === "number"
+            ? { withoutQlooRank: item.withoutQlooRank }
+            : {}),
+          ...(typeof item.scoreDelta === "number"
+            ? { scoreDelta: item.scoreDelta }
+            : {}),
+        },
+      ]
+    }),
+  }
+}
+
+function isObject(value: Json | undefined): value is { [key: string]: Json } {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
@@ -356,5 +497,29 @@ function isAvailability(
     value === "supported" ||
     value === "conditional" ||
     value === "unavailable"
+  )
+}
+
+function isQlooKind(
+  value: Json | undefined
+): value is QlooSignalRecord["kind"] {
+  return (
+    value === "entity" ||
+    value === "tag" ||
+    value === "audience" ||
+    value === "locality"
+  )
+}
+
+function isQlooGroup(
+  value: Json | undefined
+): value is QlooSignalRecord["sourceGroup"] {
+  return (
+    value === "market" ||
+    value === "brand" ||
+    value === "product" ||
+    value === "reference" ||
+    value === "combined" ||
+    value === "creator"
   )
 }

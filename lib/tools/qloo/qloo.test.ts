@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises"
 import test from "node:test"
 import { analyzeCulture } from "./analyze-culture.ts"
 import { createQlooClient } from "./client.ts"
+import { enrichCreatorsWithQloo } from "./enrich-creators.ts"
 import { resolveEntities } from "./resolve-entities.ts"
 import type { CampaignBrief } from "../../domain/types.ts"
 import { ProviderError } from "../provider-errors.ts"
@@ -25,6 +26,28 @@ const tasteFixture = JSON.parse(
     "utf8"
   )
 ) as unknown
+const tagFixture = {
+  results: [
+    {
+      tag_id: "urn:tag:category:streetwear",
+      name: "Streetwear",
+      types: ["urn:entity:brand"],
+    },
+  ],
+}
+const tagAffinityFixture = {
+  results: {
+    tags: [
+      {
+        tag_id: "urn:tag:category:streetwear",
+        name: "Streetwear",
+        types: ["urn:entity:brand"],
+        query: { affinity: 0.92 },
+      },
+    ],
+  },
+  query: { localities: { signal: { name: "India" } } },
+}
 
 const brief: CampaignBrief = {
   brandName: "Nike",
@@ -68,27 +91,74 @@ test("Qloo keeps unresolved references explicit", async () => {
 })
 
 test("Qloo includes resolved reference entities in the Insights signal", async () => {
-  let insightsUrl = ""
+  let insightsBody: Record<string, unknown> | undefined
+  const client = createQlooClient({
+    baseUrl: "https://qloo.test",
+    searchUrl: "https://qloo.test/search",
+    insightsUrl: "https://qloo.test/v2/insights",
+    apiKey: "test-key",
+    fetchImpl: async (input, init) => {
+      if (input.includes("/search")) {
+        return new Response(JSON.stringify(entityFixture), { status: 200 })
+      }
+      if (input.includes("/tags")) {
+        return new Response(JSON.stringify(tagFixture), { status: 200 })
+      }
+      insightsBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return new Response(JSON.stringify(tasteFixture), { status: 200 })
+    },
+  })
+
+  await analyzeCulture(brief, client)
+  assert.equal(
+    JSON.stringify(insightsBody?.["signal.interests.entities"]),
+    JSON.stringify([
+      { entity: "C70CE2B8-0AD1-4150-BF18-5A6347F2E860", weight: 30 },
+    ])
+  )
+  assert.equal(insightsBody?.["operator.signal.interests.tags"], "intersection")
+  assert.equal(insightsBody?.["feature.explainability"], true)
+})
+
+test("Qloo enriches creator content with location-conditioned affinity", async () => {
   const client = createQlooClient({
     baseUrl: "https://qloo.test",
     searchUrl: "https://qloo.test/search",
     insightsUrl: "https://qloo.test/v2/insights",
     apiKey: "test-key",
     fetchImpl: async (input) => {
-      if (input.includes("/search")) {
-        return new Response(JSON.stringify(entityFixture), { status: 200 })
+      if (input.includes("/tags")) {
+        return new Response(JSON.stringify(tagFixture), { status: 200 })
       }
-      insightsUrl = input
-      return new Response(JSON.stringify(tasteFixture), { status: 200 })
+      return new Response(JSON.stringify(tagAffinityFixture), { status: 200 })
     },
   })
-
-  await analyzeCulture(brief, client)
-  const url = new URL(insightsUrl)
-  assert.equal(
-    url.searchParams.get("signal.interests.entities"),
-    "C70CE2B8-0AD1-4150-BF18-5A6347F2E860"
+  const evidence = {
+    source: "apify" as const,
+    fieldPath: "$.posts[0].caption",
+    observedAt: "2026-10-24T00:00:00.000Z",
+    verification: "provider_reported" as const,
+  }
+  const [creator] = await enrichCreatorsWithQloo(
+    [
+      {
+        provider: "apify",
+        providerCreatorId: "creator-1",
+        name: "Urban Streetwear",
+        platform: "instagram",
+        contentSignals: [
+          { text: "Streetwear", sourceField: "posts", evidence },
+        ],
+        missingFields: [],
+        sourceFields: {},
+        evidence: [evidence],
+      },
+    ],
+    "India",
+    client
   )
+  assert.equal(creator.qlooSignals?.[0]?.signalId, "urn:tag:category:streetwear")
+  assert.equal(creator.qlooSignals?.[0]?.affinity, 0.92)
 })
 
 test("Qloo classifies rate limits, schema mismatches, and empty signals", async () => {
@@ -139,7 +209,7 @@ test("Qloo classifies rate limits, schema mismatches, and empty signals", async 
     fetchImpl: async (input) =>
       new Response(
         JSON.stringify(
-          input.includes("/search")
+          input.includes("/search") || input.includes("/tags")
             ? { results: [] }
             : {
                 results: { tags: [] },
@@ -163,7 +233,11 @@ function createFixtureClient() {
     insightsUrl: "https://qloo.test/v2/insights",
     apiKey: "test-key",
     fetchImpl: async (input) => {
-      const body = input.includes("/search") ? entityFixture : tasteFixture
+      const body = input.includes("/search")
+        ? entityFixture
+        : input.includes("/tags")
+          ? tagFixture
+          : tasteFixture
       return new Response(JSON.stringify(body), { status: 200 })
     },
   })

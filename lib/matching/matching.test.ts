@@ -42,6 +42,7 @@ function creator(overrides: Partial<NormalizedCreator> = {}): NormalizedCreator 
     engagementRate: 0.05,
     locationUnverified: true,
     missingFields: ["audienceLocations", "languages", "fees"],
+    contentSignals: [],
     sourceFields: {},
     evidence: [
       {
@@ -68,7 +69,23 @@ function creator(overrides: Partial<NormalizedCreator> = {}): NormalizedCreator 
 }
 
 test("score math renormalizes over available components", () => {
-  const result = scoreCreator(brief, signals, creator())
+  const result = scoreCreator(
+    brief,
+    signals,
+    creator({
+      qlooSignals: [
+        {
+          signalId: "tag-1",
+          kind: "tag",
+          name: "Streetwear",
+          types: ["urn:tag"],
+          affinity: 0.85,
+          sourceGroup: "creator",
+          evidence: signals[0].evidence,
+        },
+      ],
+    })
+  )
   assert.equal(result.campaignFitScore !== null, true)
   assert.equal(result.evidenceCompleteness, 0.85)
   assert.equal(

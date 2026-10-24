@@ -10,6 +10,7 @@ import {
 import type { WorkflowStage } from "@/lib/domain/types"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/lib/db/database.types"
+import { logWorkflowEvent } from "@/lib/workflow/telemetry"
 
 export interface WorkflowContext {
   client: SupabaseClient<Database>
@@ -165,6 +166,14 @@ export async function transitionRunById(
     .update({ status: campaignStatus })
     .eq("id", run.campaign_id)
     .eq("user_id", run.user_id)
+  logWorkflowEvent({
+    campaignId: run.campaign_id,
+    analysisRunId: run.id,
+    stage: next.stage,
+    status: next.status,
+    previousStage: run.stage,
+    startedAt: result.data.started_at,
+  })
   return result.data
 }
 
@@ -371,6 +380,13 @@ export async function completeAnalysisRunById(
     .update({ status: "completed" })
     .eq("id", run.campaign_id)
     .eq("user_id", run.user_id)
+  logWorkflowEvent({
+    campaignId: run.campaign_id,
+    analysisRunId: run.id,
+    stage: run.stage,
+    status: next.status,
+    startedAt: result.data.started_at,
+  })
   return result.data
 }
 
@@ -408,6 +424,14 @@ export async function failAnalysisRunById(
     .update({ status: campaignStatusForRunState(next) })
     .eq("id", run.campaign_id)
     .eq("user_id", run.user_id)
+  logWorkflowEvent({
+    campaignId: run.campaign_id,
+    analysisRunId: run.id,
+    stage: next.stage,
+    status: next.status,
+    startedAt: run.started_at,
+    errorCode,
+  })
   return result.data
 }
 

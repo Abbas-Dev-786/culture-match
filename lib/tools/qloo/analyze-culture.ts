@@ -78,6 +78,7 @@ export async function analyzeCulture(
     location: parsed.location,
     providerSummary: {
       locationQuery,
+      location: parsed.location,
       resolvedReferences: resolvedReferences.map((entity) => ({
         reference: entity.reference,
         status: entity.status,

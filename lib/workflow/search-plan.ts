@@ -72,7 +72,10 @@ export function createDeterministicSearchPlans(
     .sort((left, right) => (right.affinity ?? 0) - (left.affinity ?? 0))
     .slice(0, 3)
     .map((signal) => signal.name)
-  const culturalQuery = [brief.productCategory, ...terms].join(" ")
+  const languageTerms = brief.preferredLanguages.slice(0, 3)
+  const culturalQuery = [brief.productCategory, ...terms, ...languageTerms].join(
+    " "
+  )
   const cultureInformed = buildPlan("culture_informed", brief, culturalQuery)
   return { baseline, cultureInformed, source: "deterministic" }
 }

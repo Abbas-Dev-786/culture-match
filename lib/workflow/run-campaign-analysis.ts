@@ -51,6 +51,7 @@ import {
 } from "@/lib/matching/score-creators"
 import { compareRuns, rankedCreators } from "@/lib/matching/compare-runs"
 import { generateEvidenceGroundedReport } from "@/lib/agent/model"
+import { logWorkflowEvent } from "@/lib/workflow/telemetry"
 
 const activeCampaigns = new Set<string>()
 
@@ -127,6 +128,7 @@ async function advanceWorkflow(
     let culture = await getCultureProfile(client, userId, run.id)
     if (!culture) {
       const retries: JsonObject[] = []
+      const providerStartedAt = new Date().toISOString()
       const result = await withProviderRetry(
         "qloo",
         () => analyzeCulture(brief, createQlooClient()),
@@ -154,6 +156,14 @@ async function advanceWorkflow(
         providerSummary,
         ...(result.rawPayload ? { rawPayload: result.rawPayload } : {}),
         observedAt: new Date().toISOString(),
+      })
+      logWorkflowEvent({
+        campaignId: campaign.id,
+        analysisRunId: run.id,
+        stage: "researching_culture",
+        status: "provider_completed",
+        provider: "qloo",
+        startedAt: providerStartedAt,
       })
       culture = { signals: result.signals, providerSummary }
     }
@@ -204,6 +214,14 @@ async function advanceWorkflow(
         plans.baseline,
         `${run.idempotency_key}:baseline`
       )
+      logWorkflowEvent({
+        campaignId: campaign.id,
+        analysisRunId: run.id,
+        stage: "searching_creators",
+        status: "provider_started",
+        provider: "apify",
+        startedAt: run.started_at,
+      })
       run = await updateRunBaselineProviderIds(
         client,
         claim.run,
@@ -218,6 +236,14 @@ async function advanceWorkflow(
         culturePlan,
         `${run.idempotency_key}:culture`
       )
+      logWorkflowEvent({
+        campaignId: campaign.id,
+        analysisRunId: run.id,
+        stage: "searching_creators",
+        status: "provider_started",
+        provider: "apify",
+        startedAt: run.started_at,
+      })
       run = await updateRunProviderIds(
         client,
         run,
@@ -314,6 +340,14 @@ async function advanceWorkflow(
     searchVariant: "culture_informed",
     creators: cultureResults.creators,
   })
+  logWorkflowEvent({
+    campaignId: campaign.id,
+    analysisRunId: run.id,
+    stage: "searching_creators",
+    status: "provider_completed",
+    provider: "apify",
+    startedAt: run.started_at,
+  })
   return transitionRunById(client, run, "scoring")
 }
 
@@ -372,6 +406,13 @@ async function scoreWorkflow(
     comparison,
   })
   await updateScoreAlgorithmVersion(client, run, SCORE_ALGORITHM_VERSION)
+  logWorkflowEvent({
+    campaignId: campaign.id,
+    analysisRunId: run.id,
+    stage: "scoring",
+    status: "completed",
+    startedAt: run.started_at,
+  })
   return transitionRunById(client, run, "generating_report")
 }
 
@@ -437,6 +478,16 @@ async function reportWorkflow(
         }
       }
     }
+  }
+  if (modelEnabled) {
+    logWorkflowEvent({
+      campaignId: campaign.id,
+      analysisRunId: run.id,
+      stage: "generating_report",
+      status: "completed",
+      provider: "openrouter",
+      startedAt: run.started_at,
+    })
   }
   return completeAnalysisRunById(client, run)
 }

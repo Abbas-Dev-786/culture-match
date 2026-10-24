@@ -127,6 +127,27 @@ export interface BaselineComparison {
   materiallyChanged: boolean
 }
 
+export interface SafeCultureReference {
+  reference: string
+  status: "resolved" | "ambiguous" | "unresolved"
+  entityId?: string
+  name?: string
+}
+
+export interface SafeCultureProfile {
+  signals: CultureSignal[]
+  locationQuery?: string
+  location?: {
+    name: string
+    entityId?: string
+    disambiguation?: string
+  }
+  resolvedReferences: SafeCultureReference[]
+  unresolvedReferences: string[]
+  signalCount: number
+  searchPlanSource?: "deterministic" | "model"
+}
+
 export interface SafeCampaign {
   id: string
   brandName: string

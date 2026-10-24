@@ -274,6 +274,7 @@ function httpError(status: number): ProviderError {
     400: { code: "INVALID_PARAMETERS", retryable: false },
     401: { code: "AUTHENTICATION_FAILED", retryable: false },
     403: { code: "AUTHENTICATION_FAILED", retryable: false },
+    402: { code: "PAYMENT_REQUIRED", retryable: false },
     404: { code: "INVALID_PARAMETERS", retryable: false },
     422: { code: "INVALID_PARAMETERS", retryable: false },
     429: { code: "RATE_LIMITED", retryable: true },
@@ -288,7 +289,10 @@ function httpError(status: number): ProviderError {
     code: mapped.code,
     status,
     retryable: mapped.retryable,
-    message: `apify returned HTTP ${status}`,
+    message:
+      status === 402
+        ? "Apify requires available credits or a billing plan before it can start this actor"
+        : `apify returned HTTP ${status}`,
   })
 }
 

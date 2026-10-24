@@ -12,6 +12,8 @@
 
 `migrations/0003_workflow_guards.sql` adds durable provider-start leases and indexes the composite foreign keys used by the workflow tables.
 
+`migrations/0004_matching_results.sql` adds baseline/culture-informed provider runs, search variants, versioned score metadata, evidence completeness, caveats, concepts, and comparison metadata.
+
 The repository instructions keep new files under `app/` and `lib/`, so the migration is stored under `lib/db/migrations/`. Apply its SQL through the Supabase migration workflow before exercising the API against the project.
 
 The schema uses authenticated owner-scoped RLS. Every table carries `user_id`, every child table has composite ownership foreign keys, and normal user-facing data access uses the publishable client with RLS. The production Apify webhook is a separately authenticated internal route and uses the service-role client only after validating its bearer secret.

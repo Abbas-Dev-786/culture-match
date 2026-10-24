@@ -82,6 +82,7 @@ export async function saveCreatorCandidates(
     campaignId: string
     analysisRunId: string
     userId: string
+    searchVariant: "baseline" | "culture_informed"
     creators: NormalizedCreator[]
   }
 ): Promise<void> {
@@ -89,6 +90,7 @@ export async function saveCreatorCandidates(
     campaign_id: input.campaignId,
     analysis_run_id: input.analysisRunId,
     user_id: input.userId,
+    search_variant: input.searchVariant,
     provider: creator.provider,
     provider_creator_id: creator.providerCreatorId,
     name: creator.name,
@@ -109,7 +111,7 @@ export async function saveCreatorCandidates(
   const result = await client
     .from("creator_candidates")
     .upsert(rows, {
-      onConflict: "analysis_run_id,provider,provider_creator_id",
+      onConflict: "analysis_run_id,provider,provider_creator_id,search_variant",
     })
   if (result.error)
     throw new ApplicationError(
@@ -133,7 +135,11 @@ function signalToJson(signal: CultureSignal): JsonObject {
 function evidenceToJson(evidence: EvidenceRef): JsonObject {
   return {
     source: evidence.source,
+    ...(evidence.label ? { label: evidence.label } : {}),
     fieldPath: evidence.fieldPath,
+    ...(evidence.providerEntityId
+      ? { providerEntityId: evidence.providerEntityId }
+      : {}),
     observedAt: evidence.observedAt,
     verification: evidence.verification,
     ...(evidence.excerpt ? { excerpt: evidence.excerpt } : {}),
@@ -159,6 +165,8 @@ function creatorToJson(creator: NormalizedCreator): JsonObject {
       ? { isVerified: creator.isVerified }
       : {}),
     locationUnverified: creator.locationUnverified ?? true,
+    missingFields: creator.missingFields,
+    sourceFields: creator.sourceFields,
     ...(creator.providerMatchScore !== undefined
       ? { providerMatchScore: creator.providerMatchScore }
       : {}),
@@ -198,8 +206,16 @@ function readSignals(value: unknown): CultureSignal[] {
           ? { affinity: item.affinity }
           : {}),
         evidence: {
-          source: evidence.source,
+          source: isEvidenceSource(evidence.source)
+            ? evidence.source
+            : "derived",
+          ...(typeof evidence.label === "string"
+            ? { label: evidence.label }
+            : {}),
           fieldPath: evidence.fieldPath,
+          ...(typeof evidence.providerEntityId === "string"
+            ? { providerEntityId: evidence.providerEntityId }
+            : {}),
           observedAt: evidence.observedAt,
           verification: evidence.verification,
           ...(typeof evidence.excerpt === "string"
@@ -223,6 +239,12 @@ function isVerificationState(
     value === "provider_reported" ||
     value === "unverified"
   )
+}
+
+function isEvidenceSource(
+  value: string
+): value is EvidenceRef["source"] {
+  return ["qloo", "apify", "user_input", "derived"].includes(value)
 }
 
 function rawExpiry(): string {

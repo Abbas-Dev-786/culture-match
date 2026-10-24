@@ -12,12 +12,21 @@ import {
 import {
   failAnalysisRunById,
   claimProviderStart,
+  completeAnalysisRunById,
   getWorkflowContext,
   getWorkflowContextByProviderRunId,
   transitionRunById,
+  updateRunBaselineDatasetId,
+  updateRunBaselineProviderIds,
   updateRunDatasetId,
   updateRunProviderIds,
 } from "@/lib/db/runs"
+import {
+  getCreatorCandidates,
+  getCreatorMatches,
+  saveCreatorMatches,
+  updateCreatorMatchReport,
+} from "@/lib/db/matches"
 import { createApifyClient } from "@/lib/tools/apify/client"
 import { getRunResults } from "@/lib/tools/apify/get-run-results"
 import { startCreatorSearch } from "@/lib/tools/apify/search-creators"
@@ -33,7 +42,15 @@ import {
 import { generateModelSearchPlan } from "@/lib/workflow/search-plan-model"
 import { createServiceRoleClient } from "@/lib/server-admin"
 import type { WorkflowContext } from "@/lib/db/runs"
-import { isApplicationError } from "@/lib/errors"
+import { ApplicationError, isApplicationError } from "@/lib/errors"
+import { normalizeStoredCreator } from "@/lib/matching/normalize-creator"
+import { normalizeCultureSignals } from "@/lib/matching/normalize-culture"
+import {
+  scoreCreators,
+  SCORE_ALGORITHM_VERSION,
+} from "@/lib/matching/score-creators"
+import { compareRuns, rankedCreators } from "@/lib/matching/compare-runs"
+import { generateEvidenceGroundedReport } from "@/lib/agent/model"
 
 const activeCampaigns = new Set<string>()
 
@@ -144,9 +161,7 @@ async function advanceWorkflow(
   }
   enforceWorkflowRuntime(run)
 
-  if (run.stage !== "searching_creators") return run
-
-  if (!run.provider_run_id) {
+  if (run.stage === "searching_creators" && (!run.provider_run_id || !run.baseline_provider_run_id)) {
     const culture = await getCultureProfile(client, userId, run.id)
     if (!culture)
       throw new ProviderError({
@@ -178,33 +193,92 @@ async function advanceWorkflow(
       observedAt: new Date().toISOString(),
     })
     const claim = await claimProviderStart(client, run)
-    if (!claim) return (await getWorkflowContext(campaign.id)).run
+    if (!claim) return run
 
     const apify = createApifyClient()
     // Actor creation is intentionally single-attempt: a lost response can
     // mean Apify accepted the run, so repeating the request could duplicate it.
-    const started = await startCreatorSearch(
-      apify,
-      culturePlan,
-      run.idempotency_key
-    )
-    run = await updateRunProviderIds(
-      client,
-      claim.run,
-      started.runId,
-      started.datasetId,
-      claim.claimToken
-    )
+    if (!claim.run.baseline_provider_run_id) {
+      const baselineStarted = await startCreatorSearch(
+        apify,
+        plans.baseline,
+        `${run.idempotency_key}:baseline`
+      )
+      run = await updateRunBaselineProviderIds(
+        client,
+        claim.run,
+        baselineStarted.runId,
+        baselineStarted.datasetId,
+        claim.claimToken
+      )
+    }
+    if (!run.provider_run_id) {
+      const started = await startCreatorSearch(
+        apify,
+        culturePlan,
+        `${run.idempotency_key}:culture`
+      )
+      run = await updateRunProviderIds(
+        client,
+        run,
+        started.runId,
+        started.datasetId,
+        claim.claimToken
+      )
+    }
     return run
   }
 
-  const providerRunId = run.provider_run_id
-  const results = await withProviderRetry(
+  if (run.stage !== "searching_creators") {
+    if (run.stage === "scoring")
+      return scoreWorkflow(client, campaign, run, userId)
+    if (run.stage === "generating_report")
+      return reportWorkflow(client, campaign, run, userId)
+    return run
+  }
+
+  const baselineResults = await withProviderRetry(
     "apify",
     () =>
       getRunResults(
         createApifyClient(),
-        providerRunId,
+        run.baseline_provider_run_id as string,
+        run.baseline_provider_dataset_id ?? undefined,
+        new Date().toISOString(),
+        campaign.creator_limit
+      ),
+    undefined,
+    undefined,
+    (record) =>
+      console.info(
+        "provider_retry",
+        JSON.stringify({
+          runId: run.id,
+          provider: record.provider,
+          attempt: record.attempt,
+          delayClass: record.delayClass,
+          errorCode: record.errorCode,
+        })
+      )
+  )
+  if (!baselineResults) return run
+  if (
+    baselineResults.run.datasetId &&
+    baselineResults.run.datasetId !== run.baseline_provider_dataset_id
+  ) {
+    run = await updateRunBaselineDatasetId(
+      client,
+      run,
+      baselineResults.run.datasetId
+    )
+  }
+
+  const cultureResults = await withProviderRetry(
+    "apify",
+    () =>
+      getRunResults(
+        createApifyClient(),
+        run.provider_run_id as string,
         run.provider_dataset_id ?? undefined,
         new Date().toISOString(),
         campaign.creator_limit
@@ -223,18 +297,166 @@ async function advanceWorkflow(
         })
       )
   )
-  if (!results) return run
+  if (!cultureResults) return run
   if (
-    results.run.datasetId &&
-    results.run.datasetId !== run.provider_dataset_id
+    cultureResults.run.datasetId &&
+    cultureResults.run.datasetId !== run.provider_dataset_id
   ) {
-    run = await updateRunDatasetId(client, run, results.run.datasetId)
+    run = await updateRunDatasetId(client, run, cultureResults.run.datasetId)
   }
   await saveCreatorCandidates(client, {
     ...runOwnership(run, campaign.id, userId),
-    creators: results.creators,
+    searchVariant: "baseline",
+    creators: baselineResults.creators,
+  })
+  await saveCreatorCandidates(client, {
+    ...runOwnership(run, campaign.id, userId),
+    searchVariant: "culture_informed",
+    creators: cultureResults.creators,
   })
   return transitionRunById(client, run, "scoring")
+}
+
+async function scoreWorkflow(
+  client: Parameters<typeof getCultureProfile>[0],
+  campaign: CampaignRow,
+  run: AnalysisRunRow,
+  userId: string
+): Promise<AnalysisRunRow> {
+  const culture = await getCultureProfile(client, userId, run.id)
+  if (!culture)
+    throw new ProviderError({
+      provider: "qloo",
+      code: "EMPTY_RESULT",
+      message: "Culture research is missing before scoring",
+      retryable: false,
+    })
+
+  const [baselineRows, cultureRows] = await Promise.all([
+    getCreatorCandidates(client, userId, run.id, "baseline"),
+    getCreatorCandidates(client, userId, run.id, "culture_informed"),
+  ])
+  const brief = campaignToBrief(campaign)
+  const signals = normalizeCultureSignals(culture.signals)
+  const baselineScores = scoreCreators(
+    brief,
+    signals,
+    baselineRows.map(normalizeStoredCreator)
+  )
+  const cultureScores = scoreCreators(
+    brief,
+    signals,
+    cultureRows.map(normalizeStoredCreator)
+  )
+  const comparison = compareRuns(
+    rankedCreators(baselineScores),
+    rankedCreators(cultureScores)
+  )
+
+  await saveCreatorMatches(client, {
+    ...runOwnership(run, campaign.id, userId),
+    searchVariant: "baseline",
+    scored: baselineScores,
+    candidateByProviderId: new Map(
+      baselineRows.map((candidate) => [candidate.provider_creator_id, candidate])
+    ),
+    comparison,
+  })
+  await saveCreatorMatches(client, {
+    ...runOwnership(run, campaign.id, userId),
+    searchVariant: "culture_informed",
+    scored: cultureScores,
+    candidateByProviderId: new Map(
+      cultureRows.map((candidate) => [candidate.provider_creator_id, candidate])
+    ),
+    comparison,
+  })
+  await updateScoreAlgorithmVersion(client, run, SCORE_ALGORITHM_VERSION)
+  return transitionRunById(client, run, "generating_report")
+}
+
+async function reportWorkflow(
+  client: Parameters<typeof getCultureProfile>[0],
+  campaign: CampaignRow,
+  run: AnalysisRunRow,
+  userId: string
+): Promise<AnalysisRunRow> {
+  const modelEnabled = process.env.ENABLE_MODEL_REPORTS === "true"
+  if (modelEnabled) {
+    const culture = await getCultureProfile(client, userId, run.id)
+    const candidates = await getCreatorCandidates(
+      client,
+      userId,
+      run.id,
+      "culture_informed"
+    )
+    const matches = await getCreatorMatches(client, userId, run.id)
+    if (culture) {
+      const scored = scoreCreators(
+        campaignToBrief(campaign),
+        normalizeCultureSignals(culture.signals),
+        candidates.map(normalizeStoredCreator)
+      )
+      const matchesByCandidateId = new Map(
+        matches.map((match) => [match.creator_candidate_id, match])
+      )
+      const candidateByProviderId = new Map(
+        candidates.map((candidate) => [candidate.provider_creator_id, candidate])
+      )
+      for (const result of scored.slice(0, 5)) {
+        const candidate = candidateByProviderId.get(result.creator.providerCreatorId)
+        if (!candidate) continue
+        const match = matchesByCandidateId.get(candidate.id)
+        if (!match) continue
+        try {
+          const report = await generateEvidenceGroundedReport(
+            campaignToBrief(campaign),
+            {
+              name: result.creator.name,
+              ...(result.creator.username
+                ? { username: result.creator.username }
+                : {}),
+              platform: result.creator.platform,
+              ...(result.creator.bio ? { bio: result.creator.bio } : {}),
+              campaignFitScore: result.campaignFitScore,
+              evidenceCompleteness: result.evidenceCompleteness,
+              components: result.components,
+              caveats: result.caveats,
+            },
+            result.evidence
+          )
+          if (report) {
+            await updateCreatorMatchReport(client, match.id, userId, {
+              summary: report.summary,
+              caveats: report.caveats,
+              concept: report.concept,
+            })
+          }
+        } catch {
+          // Deterministic match data remains the source of truth if model output fails.
+        }
+      }
+    }
+  }
+  return completeAnalysisRunById(client, run)
+}
+
+async function updateScoreAlgorithmVersion(
+  client: Parameters<typeof getCultureProfile>[0],
+  run: AnalysisRunRow,
+  version: string
+): Promise<void> {
+  const result = await client
+    .from("analysis_runs")
+    .update({ score_algorithm_version: version })
+    .eq("id", run.id)
+    .eq("user_id", run.user_id)
+  if (result.error)
+    throw new ApplicationError(
+      "DATABASE_ERROR",
+      500,
+      "Unable to persist the score algorithm version"
+    )
 }
 
 function enforceWorkflowRuntime(run: AnalysisRunRow): void {

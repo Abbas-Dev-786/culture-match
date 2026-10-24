@@ -10,8 +10,8 @@ export default function Page() {
           <h1 className="max-w-2xl font-heading text-5xl font-semibold tracking-tight md:text-7xl">Find creators through culture, not guesswork.</h1>
           <p className="max-w-xl text-lg leading-8 text-muted-foreground">Create a campaign brief, persist the analysis state, and keep provider evidence traceable as the workflow grows.</p>
           <div className="flex flex-wrap gap-3">
-            <Button size="lg" render={<Link href="/campaigns/new" />}>Start a campaign</Button>
-            <Button size="lg" variant="outline" render={<Link href="/auth/login" />}>Sign in</Button>
+            <Button size="lg" nativeButton={false} render={<Link href="/campaigns/new" />}>Start a campaign</Button>
+            <Button size="lg" variant="outline" nativeButton={false} render={<Link href="/auth/login" />}>Sign in</Button>
           </div>
         </section>
         <section className="grid gap-3 rounded-3xl border bg-background p-5 shadow-sm">

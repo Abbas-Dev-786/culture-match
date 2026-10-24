@@ -40,3 +40,16 @@ test("workflow guards migration adds durable provider-start claims and FK indexe
   assert.match(sql, /analysis_runs_provider_start_claim_idx/)
   assert.match(sql, /creator_matches_candidate_user_fk_idx/)
 })
+
+test("matching results migration stores both search variants and scored evidence", async () => {
+  const sql = await readFile(
+    new URL("./migrations/0004_matching_results.sql", import.meta.url),
+    "utf8"
+  )
+  assert.match(sql, /baseline_provider_run_id text/)
+  assert.match(sql, /search_variant text not null/)
+  assert.match(sql, /creator_candidates_run_provider_variant_key/)
+  assert.match(sql, /evidence_completeness numeric/)
+  assert.match(sql, /campaign_concept jsonb/)
+  assert.match(sql, /comparison_metadata jsonb/)
+})

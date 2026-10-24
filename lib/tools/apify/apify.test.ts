@@ -77,6 +77,32 @@ test("Apify persists the run identifiers from the start response", async () => {
   assert.equal(receivedIdempotencyKey, "run-key")
 })
 
+test("Apify classifies payment-required responses without retrying", async () => {
+  const client = createApifyClient({
+    token: "test-token",
+    apiBaseUrl: "https://apify.test/v2",
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            type: "usage-limit-exceeded",
+            message: "Usage limit exceeded",
+          },
+        }),
+        { status: 402 }
+      ),
+  })
+
+  await assert.rejects(
+    () => client.startRun({ query: "creators", platforms: ["instagram"] }),
+    (error: unknown) =>
+      error instanceof ProviderError &&
+      error.code === "PAYMENT_REQUIRED" &&
+      error.retryable === false &&
+      error.message.includes("available credits")
+  )
+})
+
 test("Apify rejects unusable dataset items", async () => {
   const client: Parameters<typeof loadCreatorResults>[0] = {
     startRun: async () => ({ id: "run", status: "READY" }),

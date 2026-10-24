@@ -48,8 +48,10 @@ export type WorkflowStage =
 export type VerificationState = "verified" | "provider_reported" | "unverified"
 
 export interface EvidenceRef {
-  source: string
+  source: "qloo" | "apify" | "user_input" | "derived"
+  label?: string
   fieldPath: string
+  providerEntityId?: string
   observedAt: string
   verification: VerificationState
   excerpt?: string
@@ -77,6 +79,8 @@ export interface NormalizedCreator {
   isVerified?: boolean
   locationUnverified?: boolean
   providerMatchScore?: number
+  missingFields: string[]
+  sourceFields: JsonObject
   evidence: EvidenceRef[]
 }
 
@@ -94,9 +98,33 @@ export interface CreatorMatch {
   candidateId: string
   rank: number
   campaignFitScore?: number
+  evidenceCompleteness: number
   scoreComponents: ScoreComponent[]
   evidence: EvidenceRef[]
+  caveats: string[]
   reportSummary?: string
+  campaignConcept?: {
+    title: string
+    idea: string
+    rationale: string
+    hypothesis: true
+  }
+}
+
+export interface BaselineComparison {
+  overlapCount: number
+  baselineCount: number
+  cultureInformedCount: number
+  overlapRate: number
+  baselineOnlyIds: string[]
+  cultureInformedOnlyIds: string[]
+  rankChanges: Array<{
+    providerCreatorId: string
+    baselineRank?: number
+    cultureInformedRank?: number
+    scoreDelta?: number
+  }>
+  materiallyChanged: boolean
 }
 
 export interface SafeCampaign {

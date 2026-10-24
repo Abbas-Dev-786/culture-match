@@ -64,6 +64,8 @@ export type AnalysisRunRow = {
   stage: WorkflowStage
   provider_run_id: string | null
   provider_dataset_id: string | null
+  baseline_provider_run_id: string | null
+  baseline_provider_dataset_id: string | null
   provider_start_claim_token: string | null
   provider_start_claimed_until: string | null
   score_algorithm_version: string
@@ -86,6 +88,8 @@ export type AnalysisRunInsert = {
   stage?: WorkflowStage
   provider_run_id?: string | null
   provider_dataset_id?: string | null
+  baseline_provider_run_id?: string | null
+  baseline_provider_dataset_id?: string | null
   provider_start_claim_token?: string | null
   provider_start_claimed_until?: string | null
   score_algorithm_version?: string
@@ -137,6 +141,7 @@ export type CreatorCandidateRow = {
   campaign_id: string
   analysis_run_id: string
   user_id: string
+  search_variant: "baseline" | "culture_informed"
   provider: string
   provider_creator_id: string
   name: string
@@ -162,6 +167,7 @@ export type CreatorCandidateInsert = {
   campaign_id: string
   analysis_run_id: string
   user_id: string
+  search_variant?: "baseline" | "culture_informed"
   provider: string
   provider_creator_id: string
   name: string
@@ -192,9 +198,14 @@ export type CreatorMatchRow = {
   user_id: string
   rank: number
   campaign_fit_score: number | null
+  score_algorithm_version: string
+  evidence_completeness: number
   score_components: Json
   evidence: Json
+  caveats: Json
   report_summary: string | null
+  campaign_concept: Json | null
+  comparison_metadata: Json
   created_at: string
   updated_at: string
 }
@@ -207,9 +218,14 @@ export type CreatorMatchInsert = {
   user_id: string
   rank: number
   campaign_fit_score?: number | null
+  score_algorithm_version?: string
+  evidence_completeness?: number
   score_components: Json
   evidence: Json
+  caveats?: Json
   report_summary?: string | null
+  campaign_concept?: Json | null
+  comparison_metadata?: Json
   created_at?: string
   updated_at?: string
 }

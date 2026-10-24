@@ -92,7 +92,9 @@ export async function getWorkflowContextByProviderRunId(
   const runResult = await client
     .from("analysis_runs")
     .select("*")
-    .eq("provider_run_id", providerRunId)
+    .or(
+      `provider_run_id.eq.${providerRunId},baseline_provider_run_id.eq.${providerRunId}`
+    )
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -205,6 +207,55 @@ export async function updateRunProviderIds(
   return result.data
 }
 
+export async function updateRunBaselineProviderIds(
+  client: SupabaseClient<Database>,
+  run: AnalysisRunRow,
+  providerRunId: string,
+  providerDatasetId: string | undefined,
+  claimToken: string
+): Promise<AnalysisRunRow> {
+  const result = await client
+    .from("analysis_runs")
+    .update({
+      baseline_provider_run_id: providerRunId,
+      ...(providerDatasetId
+        ? { baseline_provider_dataset_id: providerDatasetId }
+        : {}),
+    })
+    .eq("id", run.id)
+    .eq("user_id", run.user_id)
+    .eq("provider_start_claim_token", claimToken)
+    .is("baseline_provider_run_id", null)
+    .select("*")
+    .maybeSingle()
+  if (result.error) {
+    console.error(
+      "workflow_database_error",
+      JSON.stringify({
+        operation: "persist_baseline_provider_run",
+        code: result.error.code,
+        message: result.error.message,
+      })
+    )
+    throw new ApplicationError(
+      result.error.code === "42703" || result.error.code === "PGRST204"
+        ? "PHASE3_MIGRATION_REQUIRED"
+        : "DATABASE_ERROR",
+      500,
+      result.error.code === "42703" || result.error.code === "PGRST204"
+        ? "The Phase 3 database migration has not been applied"
+        : "Unable to persist the baseline provider run"
+    )
+  }
+  if (!result.data)
+    throw new ApplicationError(
+      "WORKFLOW_CONFLICT",
+      409,
+      "The baseline provider run could not be persisted safely"
+    )
+  return result.data
+}
+
 export async function claimProviderStart(
   client: SupabaseClient<Database>,
   run: AnalysisRunRow
@@ -257,6 +308,69 @@ export async function updateRunDatasetId(
       500,
       "Unable to persist the provider dataset"
     )
+  return result.data
+}
+
+export async function updateRunBaselineDatasetId(
+  client: SupabaseClient<Database>,
+  run: AnalysisRunRow,
+  providerDatasetId: string
+): Promise<AnalysisRunRow> {
+  const result = await client
+    .from("analysis_runs")
+    .update({ baseline_provider_dataset_id: providerDatasetId })
+    .eq("id", run.id)
+    .eq("user_id", run.user_id)
+    .select("*")
+    .single()
+  if (result.error || !result.data)
+    throw new ApplicationError(
+      "DATABASE_ERROR",
+      500,
+      "Unable to persist the baseline provider dataset"
+    )
+  return result.data
+}
+
+export async function completeAnalysisRunById(
+  client: SupabaseClient<Database>,
+  run: AnalysisRunRow
+): Promise<AnalysisRunRow> {
+  const next = {
+    status: "completed" as const,
+    stage: run.stage,
+  }
+  if (run.stage !== "generating_report")
+    throw new ApplicationError(
+      "WORKFLOW_CONFLICT",
+      409,
+      "The analysis run is not ready to complete"
+    )
+  const result = await client
+    .from("analysis_runs")
+    .update({
+      status: next.status,
+      completed_at: new Date().toISOString(),
+      provider_start_claim_token: null,
+      provider_start_claimed_until: null,
+    })
+    .eq("id", run.id)
+    .eq("user_id", run.user_id)
+    .eq("status", "running")
+    .eq("stage", "generating_report")
+    .select("*")
+    .maybeSingle()
+  if (result.error || !result.data)
+    throw new ApplicationError(
+      "WORKFLOW_CONFLICT",
+      409,
+      "The analysis run changed before it could complete"
+    )
+  await client
+    .from("campaigns")
+    .update({ status: "completed" })
+    .eq("id", run.campaign_id)
+    .eq("user_id", run.user_id)
   return result.data
 }
 

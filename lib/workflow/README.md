@@ -5,9 +5,10 @@
 1. Resolve campaign references and location signals through Qloo.
 2. Persist normalized Qloo signals before creating creator-search plans.
 3. Persist baseline and culture-informed plans before starting Apify.
-4. Acquire a durable database claim, start one Apify run with the analysis idempotency key, and persist its run and dataset IDs immediately.
+4. Acquire a durable database claim, start baseline and culture-informed Apify runs with distinct idempotency keys, and persist their run and dataset IDs immediately.
 5. Poll one Apify status per advancement request. Dataset items are loaded only after `SUCCEEDED`.
-6. Persist normalized creators and hand the run to the `scoring` stage.
+6. Persist normalized creators for both search variants and hand the run to deterministic scoring.
+7. Persist score components and baseline comparison metadata, optionally generate evidence-grounded concepts, and complete the run.
 
 `GET /api/campaigns/:id/status` only reads persisted state. In development, `POST /api/campaigns/:id/advance` advances one bounded step so a local process can recover a run without exposing provider calls to the browser. In production, Apify sends terminal run events to `POST /api/internal/apify/webhook`; the route authenticates the request, finds the persisted provider run, and advances exactly one workflow step. Duplicate webhook deliveries are safe because the workflow and database transitions are guarded.
 

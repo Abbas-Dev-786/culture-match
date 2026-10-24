@@ -85,7 +85,7 @@ export function CampaignForm() {
             <p className="text-sm text-muted-foreground">CultureMatch foundation</p>
             <h1 className="font-heading text-3xl font-semibold tracking-tight">Start a campaign</h1>
           </div>
-          <Button variant="ghost" render={<Link href="/" />}>Home</Button>
+          <Button variant="ghost" nativeButton={false} render={<Link href="/" />}>Home</Button>
         </div>
         <Card>
           <CardHeader>

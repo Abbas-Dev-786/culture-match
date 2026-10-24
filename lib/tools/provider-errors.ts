@@ -2,6 +2,7 @@ export type ProviderName = "qloo" | "apify"
 
 export type ProviderErrorCode =
   | "AUTHENTICATION_FAILED"
+  | "PAYMENT_REQUIRED"
   | "INVALID_PARAMETERS"
   | "RATE_LIMITED"
   | "TIMEOUT"

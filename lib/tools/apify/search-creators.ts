@@ -117,6 +117,15 @@ function normalizeCreator(
   const providerMatchScore = isRecord(value.match)
     ? readUnitNumber(value.match.score)
     : undefined
+  const missingFields = [
+    followers === undefined ? "followers" : undefined,
+    engagementRate === undefined ? "engagementRate" : undefined,
+    isVerified === undefined ? "isVerified" : undefined,
+    bio === undefined ? "bio" : undefined,
+    locationUnverified ? "audienceLocations" : undefined,
+    "languages",
+    "fees",
+  ].filter((field): field is string => field !== undefined)
 
   if (bio) evidence.push(fieldEvidence("$.creator.bio", observedAt, bio))
   if (username)
@@ -178,6 +187,17 @@ function normalizeCreator(
       ...(isVerified !== undefined ? { isVerified } : {}),
       locationUnverified,
       ...(providerMatchScore !== undefined ? { providerMatchScore } : {}),
+      missingFields,
+      sourceFields: {
+        ...(bio ? { bio } : {}),
+        ...(username ? { username } : {}),
+        ...(profileUrl ? { profileUrl } : {}),
+        ...(followers !== undefined ? { followers } : {}),
+        ...(engagementRate !== undefined ? { engagementRate } : {}),
+        ...(isVerified !== undefined ? { isVerified } : {}),
+        locationUnverified,
+        ...(providerMatchScore !== undefined ? { providerMatchScore } : {}),
+      },
       evidence,
     },
   ]
@@ -190,6 +210,7 @@ function fieldEvidence(
 ): EvidenceRef {
   return {
     source: "apify",
+    label: fieldPath.replace(/^\$\./, "").replaceAll(".", " "),
     fieldPath,
     observedAt,
     verification: "provider_reported",

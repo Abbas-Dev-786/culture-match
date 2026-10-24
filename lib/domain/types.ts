@@ -132,6 +132,7 @@ export interface SafeCultureReference {
   status: "resolved" | "ambiguous" | "unresolved"
   entityId?: string
   name?: string
+  candidates?: Array<{ entityId: string; name: string; types: string[] }>
 }
 
 export interface SafeCultureProfile {

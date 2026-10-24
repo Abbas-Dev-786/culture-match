@@ -12,6 +12,7 @@ import {
 } from "./evidence.ts"
 
 export const SCORE_ALGORITHM_VERSION = "phase3-v1"
+const DEFAULT_SCORE_OBSERVED_AT = "1970-01-01T00:00:00.000Z"
 
 export const scoreWeights = {
   culturalAlignment: 0.35,
@@ -34,7 +35,7 @@ export function scoreCreators(
   brief: CampaignBrief,
   signals: CultureSignal[],
   creators: NormalizedCreator[],
-  observedAt = new Date().toISOString()
+  observedAt = deterministicObservedAt(creators)
 ): ScoredCreator[] {
   return creators
     .map((creator) => scoreCreator(brief, signals, creator, observedAt))
@@ -45,7 +46,7 @@ export function scoreCreator(
   brief: CampaignBrief,
   signals: CultureSignal[],
   creator: NormalizedCreator,
-  observedAt = new Date().toISOString()
+  observedAt = DEFAULT_SCORE_OBSERVED_AT
 ): ScoredCreator {
   const components = [
     culturalComponent(signals, creator, observedAt),
@@ -281,4 +282,12 @@ function compareScores(left: number | null, right: number | null): number {
 
 function roundScore(value: number): number {
   return Math.round(Math.max(0, Math.min(100, value)) * 100) / 100
+}
+
+function deterministicObservedAt(creators: NormalizedCreator[]): string {
+  const observedAt = creators
+    .flatMap((creator) => creator.evidence.map((evidence) => evidence.observedAt))
+    .filter((value) => Number.isFinite(Date.parse(value)))
+    .sort()[0]
+  return observedAt ?? DEFAULT_SCORE_OBSERVED_AT
 }

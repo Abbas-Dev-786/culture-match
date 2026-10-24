@@ -84,6 +84,7 @@ export async function analyzeCulture(
         status: entity.status,
         entityId: entity.entityId ?? null,
         name: entity.name ?? null,
+        candidates: entity.candidates,
       })),
       unresolvedReferences: resolvedReferences
         .filter((entity) => entity.status !== "resolved")

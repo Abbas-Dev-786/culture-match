@@ -170,8 +170,22 @@ function readCultureReference(value: Json): SafeCultureReference[] {
       status: value.status,
       ...(typeof value.entityId === "string" ? { entityId: value.entityId } : {}),
       ...(typeof value.name === "string" ? { name: value.name } : {}),
+      ...(readReferenceCandidates(value.candidates).length > 0
+        ? { candidates: readReferenceCandidates(value.candidates) }
+        : {}),
     },
   ]
+}
+
+function readReferenceCandidates(
+  value: Json | undefined
+): Array<{ entityId: string; name: string; types: string[] }> {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (!isObject(item) || typeof item.entityId !== "string" || typeof item.name !== "string" || !Array.isArray(item.types)) return []
+    const types = item.types.filter(isString)
+    return types.length > 0 ? [{ entityId: item.entityId, name: item.name, types }] : []
+  })
 }
 
 function readLocation(value: { [key: string]: Json }): SafeCultureProfile["location"] {

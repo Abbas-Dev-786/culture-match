@@ -89,3 +89,24 @@ test("canonical Supabase Qloo conditioning migration is present", async () => {
   assert.match(sql, /qloo_audience_ids text\[\]/)
   assert.match(sql, /campaigns_qloo_gender_check/)
 })
+
+test("creator candidate uniqueness migration removes the legacy three-column constraint", async () => {
+  const migrationPath = new URL(
+    "./migrations/0006_fix_creator_candidate_uniqueness.sql",
+    import.meta.url
+  )
+  const canonicalMigrationPath = new URL(
+    "../../supabase/migrations/20261026120000_fix_creator_candidate_uniqueness.sql",
+    import.meta.url
+  )
+  const [sql, canonicalSql] = await Promise.all([
+    readFile(migrationPath, "utf8"),
+    readFile(canonicalMigrationPath, "utf8"),
+  ])
+
+  for (const migration of [sql, canonicalSql]) {
+    assert.match(migration, /pg_get_constraintdef\(pg_constraint\.oid\)/)
+    assert.match(migration, /UNIQUE \(analysis_run_id, provider, provider_creator_id\)/)
+    assert.match(migration, /creator_candidates_run_provider_variant_key/)
+  }
+})

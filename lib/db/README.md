@@ -16,6 +16,8 @@
 
 `migrations/0005_qloo_conditioning.sql` adds explicit Qloo audience, audience-weight, age-range, and gender inputs. These fields are user-provided conditioning only; the application never infers them from location or creator data.
 
+`migrations/0006_fix_creator_candidate_uniqueness.sql` removes the legacy three-column creator uniqueness constraint so the same creator can be stored separately for baseline and culture-informed searches. It locates the legacy constraint by definition because PostgreSQL may truncate its generated name.
+
 The canonical deployment files are in `supabase/migrations/`. The matching files in `lib/db/migrations/` are retained as the reviewed SQL source used by the migration tests. Apply the canonical Supabase migrations before exercising the API against the project.
 
 The schema uses authenticated owner-scoped RLS. Every table carries `user_id`, every child table has composite ownership foreign keys, and normal user-facing data access uses the publishable client with RLS. The production Apify webhook is a separately authenticated internal route and uses the service-role client only after validating its bearer secret.

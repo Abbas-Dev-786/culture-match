@@ -114,12 +114,32 @@ export async function saveCreatorCandidates(
     .upsert(rows, {
       onConflict: "analysis_run_id,provider,provider_creator_id,search_variant",
     })
-  if (result.error)
+  if (result.error) {
+    console.error(
+      "workflow_database_error",
+      JSON.stringify({
+        operation: "persist_creator_candidates",
+        code: result.error.code,
+        message: result.error.message,
+        details: result.error.details,
+      })
+    )
+    if (
+      result.error.code === "23505" &&
+      result.error.message.includes("creator_candidates")
+    ) {
+      throw new ApplicationError(
+        "PHASE3_MIGRATION_REQUIRED",
+        500,
+        "The creator-candidate uniqueness migration has not been applied"
+      )
+    }
     throw new ApplicationError(
       "DATABASE_ERROR",
       500,
       "Unable to persist creator results"
     )
+  }
 }
 
 function signalToJson(signal: CultureSignal): JsonObject {

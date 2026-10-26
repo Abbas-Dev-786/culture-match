@@ -86,7 +86,7 @@ export function parseTagCandidates(
     const tagId = readString(value.tag_id) ?? readString(value.id)
     const name = readString(value.name)
     const types = readStringArray(value.types ?? value.type)
-    if (!tagId || !name || types.length === 0) return []
+    if (!tagId || !name) return []
     return [{ tagId, name, types }]
   })
 }

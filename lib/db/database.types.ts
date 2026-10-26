@@ -1,5 +1,9 @@
 import type {
   CampaignStatus,
+  LaunchAnalysisStatus,
+  LaunchOpportunityType,
+  LaunchRunStatus,
+  LaunchWorkflowStage,
   JsonValue,
   MarketScope,
   RunStatus,
@@ -240,6 +244,188 @@ export type CreatorMatchInsert = {
 
 export type CreatorMatchUpdate = Partial<CreatorMatchInsert>
 
+export type LaunchAnalysisRow = {
+  id: string
+  user_id: string
+  brand_name: string
+  product: string
+  country: string
+  city: string
+  opportunity_type: LaunchOpportunityType
+  cultural_references: string[]
+  launch_intent: string
+  status: LaunchAnalysisStatus
+  created_at: string
+  updated_at: string
+}
+
+export type LaunchAnalysisInsert = {
+  id?: string
+  user_id: string
+  brand_name: string
+  product: string
+  country: string
+  city: string
+  opportunity_type: LaunchOpportunityType
+  cultural_references: string[]
+  launch_intent: string
+  status?: LaunchAnalysisStatus
+  created_at?: string
+  updated_at?: string
+}
+
+export type LaunchAnalysisUpdate = Partial<LaunchAnalysisInsert>
+
+export type LaunchAnalysisRunRow = {
+  id: string
+  analysis_id: string
+  user_id: string
+  attempt: number
+  idempotency_key: string
+  status: LaunchRunStatus
+  stage: LaunchWorkflowStage
+  error_code: string | null
+  error_message: string | null
+  queued_at: string
+  started_at: string | null
+  completed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type LaunchAnalysisRunInsert = {
+  id?: string
+  analysis_id: string
+  user_id: string
+  attempt?: number
+  idempotency_key: string
+  status?: LaunchRunStatus
+  stage?: LaunchWorkflowStage
+  error_code?: string | null
+  error_message?: string | null
+  queued_at?: string
+  started_at?: string | null
+  completed_at?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export type LaunchAnalysisRunUpdate = Partial<LaunchAnalysisRunInsert>
+
+export type LaunchCulturalProfileRow = {
+  id: string
+  analysis_id: string
+  run_id: string
+  user_id: string
+  fingerprint: Json
+  provider_summary: Json
+  raw_payload: Json | null
+  observed_at: string | null
+  raw_payload_expires_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type LaunchCulturalProfileInsert = {
+  id?: string
+  analysis_id: string
+  run_id: string
+  user_id: string
+  fingerprint: Json
+  provider_summary: Json
+  raw_payload?: Json | null
+  observed_at?: string | null
+  raw_payload_expires_at?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export type LaunchCulturalProfileUpdate = Partial<LaunchCulturalProfileInsert>
+
+export type LaunchOpportunityRow = {
+  id: string
+  analysis_id: string
+  run_id: string
+  user_id: string
+  provider: "qloo"
+  entity_id: string
+  name: string
+  types: string[]
+  provider_rank: number | null
+  affinity: number | null
+  popularity: number | null
+  related_signal_ids: string[]
+  evidence: Json
+  normalized_payload: Json
+  opportunity_rank: number
+  ranking_basis: "provider_rank" | "affinity" | "popularity" | "stable_entity_id"
+  ranking_algorithm_version: string
+  evidence_completeness: number
+  caveats: Json
+  created_at: string
+  updated_at: string
+}
+
+export type LaunchOpportunityInsert = {
+  id?: string
+  analysis_id: string
+  run_id: string
+  user_id: string
+  provider?: "qloo"
+  entity_id: string
+  name: string
+  types: string[]
+  provider_rank?: number | null
+  affinity?: number | null
+  popularity?: number | null
+  related_signal_ids?: string[]
+  evidence: Json
+  normalized_payload: Json
+  opportunity_rank?: number
+  ranking_basis?: "provider_rank" | "affinity" | "popularity" | "stable_entity_id"
+  ranking_algorithm_version?: string
+  evidence_completeness?: number
+  caveats?: Json
+  created_at?: string
+  updated_at?: string
+}
+
+export type LaunchOpportunityUpdate = Partial<LaunchOpportunityInsert>
+
+export type LaunchActivationReportRow = {
+  id: string
+  analysis_id: string
+  run_id: string
+  user_id: string
+  schema_version: "phase3-v1"
+  report: Json
+  generation_mode: "deterministic" | "openrouter"
+  model_provider: string | null
+  model_id: string | null
+  prompt_version: string
+  generated_at: string
+  created_at: string
+  updated_at: string
+}
+
+export type LaunchActivationReportInsert = {
+  id?: string
+  analysis_id: string
+  run_id: string
+  user_id: string
+  schema_version?: "phase3-v1"
+  report: Json
+  generation_mode: "deterministic" | "openrouter"
+  model_provider?: string | null
+  model_id?: string | null
+  prompt_version: string
+  generated_at: string
+  created_at?: string
+  updated_at?: string
+}
+
+export type LaunchActivationReportUpdate = Partial<LaunchActivationReportInsert>
+
 export type Database = {
   public: {
     Tables: {
@@ -273,6 +459,36 @@ export type Database = {
         Update: CreatorMatchUpdate
         Relationships: []
       }
+      launch_analyses: {
+        Row: LaunchAnalysisRow
+        Insert: LaunchAnalysisInsert
+        Update: LaunchAnalysisUpdate
+        Relationships: []
+      }
+      launch_analysis_runs: {
+        Row: LaunchAnalysisRunRow
+        Insert: LaunchAnalysisRunInsert
+        Update: LaunchAnalysisRunUpdate
+        Relationships: []
+      }
+      launch_cultural_profiles: {
+        Row: LaunchCulturalProfileRow
+        Insert: LaunchCulturalProfileInsert
+        Update: LaunchCulturalProfileUpdate
+        Relationships: []
+      }
+      launch_opportunities: {
+        Row: LaunchOpportunityRow
+        Insert: LaunchOpportunityInsert
+        Update: LaunchOpportunityUpdate
+        Relationships: []
+      }
+      launch_activation_reports: {
+        Row: LaunchActivationReportRow
+        Insert: LaunchActivationReportInsert
+        Update: LaunchActivationReportUpdate
+        Relationships: []
+      }
     }
     Views: Record<string, never>
     Functions: Record<string, never>
@@ -280,6 +496,9 @@ export type Database = {
       campaign_status: CampaignStatus
       run_status: RunStatus
       workflow_stage: WorkflowStage
+      launch_analysis_status: LaunchAnalysisStatus
+      launch_run_status: LaunchRunStatus
+      launch_workflow_stage: LaunchWorkflowStage
     }
     CompositeTypes: Record<string, never>
   }

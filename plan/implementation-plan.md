@@ -1,87 +1,61 @@
 # CultureMatch Implementation Plan
 
-**Status:** Execution plan for the MVP
-
-**Source documents:** [`docs/PRD.md`](../docs/PRD.md) and [`docs/TDD.md`](../docs/TDD.md)
-
-**Product direction:** Globally extensible cultural intelligence for regional creator marketing, demonstrated initially with an India-focused market.
+**Status:** Pivoted MVP execution plan
+**Source:** [`docs/PRD.md`](../docs/PRD.md)
+**Product direction:** Cultural launch and partnership intelligence for premium beauty and wellness brands entering Indian cities.
 
 ## 1. Objective
 
-Build and deploy a working MVP that:
+Build a focused product that:
 
-1. Accepts a campaign brief for a validated country, region, or city.
-2. Resolves campaign references and researches market signals through Qloo.
-3. Discovers creator candidates through the Influship Apify actor.
-4. Compares a baseline creator search with a Qloo-informed search.
-5. Scores candidates deterministically from available evidence.
-6. Separates verified facts, provider-derived signals, and AI-generated hypotheses.
-7. Shows missing or unverified fields instead of inventing them.
-8. Persists workflow state so the user can refresh and resume the analysis.
+1. Accepts one beauty/wellness market-entry brief for one city.
+2. Resolves the brief into Qloo entities and tags.
+3. Builds a location-conditioned cultural fingerprint.
+4. Discovers opportunities for one validated Qloo entity type.
+5. Ranks opportunities using documented provider signals.
+6. Generates an evidence-backed activation brief.
+7. Persists all inputs, stages, provenance, and limitations.
 
-The first public demonstration should use one India-focused market. The implementation must not encode India-specific assumptions into the domain model, matching logic, or provider adapters.
+The MVP does not require Apify, creator discovery, campaign scoring, or influencer audience analysis. Those are future integrations.
 
-## 2. Non-negotiable product rules
+## 2. Scope decisions
 
-- Qloo signals must come from actual API responses.
-- Creator fields must come from actual Apify results or be marked unavailable.
-- Creator residence must never be presented as audience geography.
-- Campaign Fit Score is a ranking aid, not a probability of success or ROI forecast.
-- Missing language, audience-location, fee, engagement, or content fields remain unverified.
-- The model may summarize evidence and suggest hypotheses, but it may not assign numeric scores or invent provider facts.
-- All provider secrets remain server-side.
-- All exposed Supabase tables use RLS with policies matching the access model.
-- Provider-specific schemas remain isolated behind adapters.
-- Every external request and result used in a recommendation is traceable.
+| Decision | MVP choice |
+|---|---|
+| Vertical | Premium beauty and wellness |
+| Geography | One validated Indian city per analysis |
+| Primary user | Brand strategist, growth marketer, or boutique agency |
+| Primary decision | Find culturally aligned launch partners and places |
+| Intelligence provider | Qloo |
+| AI role | Evidence-grounded activation brief only |
+| Primary output | Ranked opportunities plus cultural rationale |
+| Deferred provider | Apify creator search |
 
-## 3. MVP boundaries
-
-### Required for the first release
-
-- One product category.
-- One validated India-focused market.
-- Instagram creator discovery through the configured Apify actor.
-- Qloo entity resolution and one validated location/taste query.
-- Asynchronous Apify execution with persisted run state.
-- Normalization, deterministic scoring, evidence references, and baseline comparison.
-- Campaign form, progress state, results dashboard, and candidate detail view.
-- Safe retry behavior, input validation, secret protection, and deployment documentation.
-
-### Defer unless the provider spike proves them reliable
-
-- Multiple countries or cities in one analysis.
-- Audience demographics and geography.
-- Creator fees and confirmed budget fit.
-- Post-level language classification.
-- Multi-platform discovery.
-- Automated outreach, payments, CRM, or ROI prediction.
-- PDF export, bookmarking, and advanced collaboration.
-
-## 4. Architecture workstreams
+## 3. Architecture workstreams
 
 | Workstream | Responsibility | Main output |
 |---|---|---|
-| Product and market configuration | Validated global market list, India-first demo scope, campaign constraints | Market configuration and acceptance brief |
-| Provider adapters | Qloo and Apify authentication, requests, parsing, retries, fixtures | Tested provider clients |
-| Workflow orchestration | State machine, idempotency, asynchronous jobs, recovery | Resumable analysis run |
-| Persistence | Campaigns, runs, signals, candidates, matches, provenance | Secure database schema and migrations |
-| Matching | Normalization, score components, evidence completeness, ranking | Deterministic scoring engine |
-| Agent layer | Search-plan and report generation within narrow tool boundaries | Schema-validated model outputs |
-| Experience | Campaign form, progress, results, comparison, export | Responsive dashboard |
-| Delivery | Tests, observability, deployment, README, demo | Public working submission |
+| Product configuration | Vertical, cities, opportunity types, fixtures | Validated launch scenarios |
+| Qloo adapter | Search, tags, Insights, comparison, optional heatmaps | Typed provider boundary |
+| Workflow | Stages, idempotency, retries, recovery | Resumable analysis run |
+| Persistence | Campaigns, fingerprints, opportunities, reports | Secure database model |
+| Opportunity ranking | Provider rank/affinity and deterministic derived context | Reproducible results |
+| Agent layer | Activation brief and evidence summary | Schema-validated report |
+| Experience | Focused form, progress, fingerprint, opportunity view | Usable product surface |
+| Delivery | Tests, security, deployment, demo | Release candidate |
 
-## 5. Phase map
+## 4. Phase map
 
 | Phase | Name | Depends on | Exit gate |
 |---|---|---|---|
-| 0 | Feasibility spike and decisions | None | One real Qloo result and one real Apify result are captured and mapped without fabricated fields. |
-| 1 | Foundation and secure persistence | Phase 0 decisions | App shell, migrations, RLS, domain contracts, and workflow skeleton pass tests. |
-| 2 | Provider adapters and analysis workflow | Phases 0–1 | A campaign can execute Qloo and Apify asynchronously with persisted status and safe retries. |
-| 3 | Matching, evidence, and agent outputs | Phase 2 fixtures and normalized data | Results are deterministically scored, explainable, and baseline-comparable. |
-| 4 | Product experience and export | Phase 3 contracts | A tester can submit a campaign and understand the first recommendations without developer help. |
-| 5 | Hardening, deployment, and submission | Phases 1–4 | Public demo, repository, tests, security review, and submission materials are complete. |
+| 0 | Vertical and Qloo feasibility | None | Three representative briefs produce usable Qloo signals and at least one validated opportunity type. |
+| 1 | Domain foundation and persistence | Phase 0 | New contracts, migrations, RLS, and state machine support the pivoted workflow. |
+| 2 | Qloo research and opportunity workflow | Phases 0–1 | A run resolves inputs, builds fingerprints, retrieves opportunities, and survives interruption. |
+| 3 | Evidence, ranking, and activation brief | Phase 2 | Recommendations are reproducible, traceable, and summarized without unsupported claims. |
+| 4 | Focused product experience | Phase 3 | A user can complete an analysis and understand the top recommendations without assistance. |
+| 5 | Hardening and deployment | Phases 1–4 | Public demo, tests, security review, documentation, and release walkthrough are complete. |
 
-Detailed instructions are in:
+Detailed instructions live in:
 
 - [`phase-0-feasibility-spike.md`](phase-0-feasibility-spike.md)
 - [`phase-1-foundation.md`](phase-1-foundation.md)
@@ -90,83 +64,64 @@ Detailed instructions are in:
 - [`phase-4-results-experience.md`](phase-4-results-experience.md)
 - [`phase-5-hardening-deployment.md`](phase-5-hardening-deployment.md)
 
-## 6. Build execution rules
+## 5. Execution rules
 
-Build in dependency order. Do not begin a later phase because a screen exists; begin it only after the previous phase's exit gate is evidenced.
+For every phase:
 
-For each phase, create work items using this sequence:
-
-1. Add or update the contract/types.
+1. Update the contract before implementation.
 2. Implement the smallest working path.
-3. Add unit/contract tests beside the implementation.
-4. Add fixture or integration coverage.
-5. Run the phase validation checklist.
-6. Record unresolved limitations before moving on.
+3. Add unit and contract tests beside the implementation.
+4. Add sanitized provider fixtures.
+5. Run the phase acceptance checklist.
+6. Record limitations before starting the next phase.
 
-Use the following implementation order:
+Build order:
 
 ```text
-provider fixtures
+Qloo fixtures
   -> domain contracts
-  -> database and state machine
-  -> provider adapters
+  -> persistence and state machine
+  -> Qloo adapter
   -> workflow runner
-  -> normalization and scoring
+  -> opportunity normalization and ranking
+  -> activation brief schema
   -> results API
-  -> UI
-  -> deployment and submission
+  -> focused UI
+  -> deployment
 ```
 
-Keep each provider behind a single adapter. UI components must consume application contracts, never raw Qloo or Apify payloads.
+## 6. Required artifacts by phase
 
-## 7. Build artifacts by phase
-
-| Phase | Build artifacts that must exist before handoff |
+| Phase | Required artifacts |
 |---|---|
-| 0 | Decision log, validated market config, sanitized Qloo/Apify fixtures, provider field matrix |
-| 1 | Project bootstrap, domain schemas, migrations, RLS/policies, state machine, API skeleton |
-| 2 | Qloo client, Apify client, workflow runner, retries, idempotency, status/retry endpoints |
-| 3 | Normalizers, evidence builder, scoring engine, baseline comparison, report schemas |
-| 4 | Campaign form, progress UI, culture profile, creator cards, comparison, safe export |
-| 5 | Full test suite, security review, deployment config, README, demo script, release checklist |
+| 0 | Decision log, validated cities, Qloo fixtures, field matrix, representative briefs |
+| 1 | Domain schemas, migrations, RLS policies, state machine, API skeleton |
+| 2 | Qloo client, research workflow, opportunity retrieval, retries, status/retry routes |
+| 3 | Evidence builder, opportunity ranking, report schema, grounded prompts, result persistence |
+| 4 | Focused form, progress UI, fingerprint view, opportunity cards, activation brief, export |
+| 5 | Full verification, security review, deployment config, README, demo script, release checklist |
 
-## 8. Critical decisions to lock before implementation
+## 7. Definition of done
 
-1. **Validated market:** select the first India-focused country/region/city and product category.
-2. **Qloo request contract:** confirm base URL, authentication header, entity-search route, exact Insights parameters, response fields, and location behavior.
-3. **Apify actor contract:** confirm input fields, output fields, terminal statuses, dataset behavior, result limits, cost, and expected latency.
-4. **Model provider:** choose one provider and pin the AI SDK and provider package versions.
-5. **Execution model:** choose how the asynchronous workflow advances after the initial request: bounded background polling, webhook, scheduled job, or durable workflow service.
-6. **Authentication mode:** either ship a clearly limited public demo or add authentication and owner-scoped access from the first database migration.
-7. **Retention policy:** define how long raw provider payloads, normalized records, and campaign reports remain stored.
+The MVP is complete only when:
 
-## 9. Global definition of done
+- A user can submit a valid focused brief.
+- Qloo requests use server-side credentials and validated parameters.
+- A run can resume after a refresh or process interruption.
+- Every recommendation has provider provenance or is explicitly marked derived.
+- Unknown commercial facts remain unknown.
+- AI output is schema-validated and labeled as hypothesis where appropriate.
+- RLS and secret boundaries have been tested.
+- The public demo follows the release scenario in the PRD.
 
-A phase is complete only when its code, tests, fixtures, documentation, and acceptance evidence are present. The final MVP is complete when:
+## 8. Deferred work
 
-- A new user can submit a valid campaign brief.
-- The campaign receives a stable ID and visible progress state.
-- Qloo and Apify requests use server-side credentials and validated inputs.
-- Duplicate browser polling cannot create duplicate provider jobs.
-- A successful run stores provider provenance and normalized records.
-- A failed run shows a safe message and a bounded retry path.
-- Every displayed score has component values, availability, rationale, and evidence references.
-- Baseline and culture-informed results can be compared even when they are similar.
-- AI-generated concepts are clearly labeled hypotheses and schema-validated.
-- No secrets, raw credentials, or unnecessary provider payloads reach the client.
-- RLS, policies, grants, and service-role usage have been reviewed.
-- The public deployment works from the documented setup instructions.
+Do not begin these before Phase 5:
 
-## 10. Cross-phase testing strategy
-
-- **Unit:** schemas, normalization, score math, state transitions, evidence completeness, and comparison logic.
-- **Contract:** Qloo and Apify fixtures, response validation, terminal status handling, and retry classification.
-- **Integration:** database writes, idempotency, provider adapters, and workflow recovery.
-- **End-to-end:** submit campaign, observe progress, inspect results, refresh, retry a failure, and compare rankings.
-- **Security:** environment-variable exposure, RLS/policy behavior, prompt-injection fixtures, safe logs, and client bundle inspection.
-
-## 11. Delivery priorities under time pressure
-
-Protect Phase 0, provider adapters, deterministic scoring, evidence display, and the end-to-end demo path. Cut PDF export, bookmarks, multi-market comparison, advanced agent loops, and cosmetic dashboard work before cutting validation, provenance, retries, or security.
-
-The missing `architecture.png` and `sequence.png` files referenced by the TDD should be added during documentation hardening or the references should be removed before the repository is published.
+- Creator discovery or influencer ranking.
+- Multi-platform social data.
+- Multi-city comparison.
+- Additional verticals.
+- Automated outreach or CRM.
+- ROI prediction or performance calibration.
+- Advanced audience/demographic configuration.

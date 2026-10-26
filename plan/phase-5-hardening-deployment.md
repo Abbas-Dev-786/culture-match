@@ -1,195 +1,100 @@
-# Phase 5 — Hardening, Deployment, and Submission
+# Phase 5 — Hardening, Deployment, and Validation
 
-**Purpose:** Verify the complete workflow, close security and reliability gaps, deploy the product, and prepare the public submission.
+**Purpose:** Verify the focused product, deploy it safely, and prepare a credible demo and feedback loop.
 
 **Depends on:** Phases 1–4
 
-**Exit condition:** The public demo works from clean setup instructions, the repository contains required source/assets/license information, and the end-to-end acceptance suite passes.
+**Exit condition:** The public demo completes the release scenario from a clean setup, with tested security, provider contracts, limitations, and documentation.
 
-## Build order
+## P5-01 — Freeze the product scope
 
-### P5-01 — Freeze the release candidate
+Record the exact:
 
-Stop adding product scope. Record the exact provider versions, model ID, validated market, score algorithm version, environment names, and known limitations used by the demo.
+- Vertical and validated cities.
+- Supported opportunity types.
+- Qloo base URL and API contract version.
+- Ranking algorithm version.
+- Activation brief schema and model version.
+- Known limitations.
 
-### P5-02 — Run automated verification
+Do not add creator discovery, new industries, or multi-city analysis during release hardening.
 
-Run linting, type checking, unit tests, contract tests, integration tests, and the browser acceptance suite. Fix failures before deploying. Store the test result and fixture version with the release notes.
+## P5-02 — Run verification
 
-### P5-03 — Perform security and data review
+Run:
 
-Inspect the built client bundle, environment configuration, server logs, RLS policies, Data API exposure, grants, retry endpoints, and export output. Verify that every public route returns only client-safe data.
+- Type checking.
+- Linting.
+- Unit tests.
+- Qloo contract tests.
+- Database and RLS tests.
+- Workflow recovery tests.
+- UI/component tests.
+- End-to-end acceptance test.
 
-### P5-04 — Deploy database and application
+The acceptance test should create a premium beauty/wellness analysis, inspect the fingerprint, review opportunities, generate the activation brief, refresh during processing, and export safe results.
 
-Apply the approved migrations, run database advisors/security checks, execute a test query, configure deployment secrets, deploy the application, and exercise the complete workflow against the deployed environment.
+## P5-03 — Security and privacy review
 
-### P5-05 — Prepare repository and demo
+Verify:
 
-Add README instructions, license, diagrams or corrected references, provider setup notes, fixture policy, test commands, limitations, and a short demo script. Verify a clean checkout can follow the README.
+- Qloo credentials are server-only.
+- No secrets appear in client bundles, logs, errors, or exports.
+- RLS is enabled and owner-scoped.
+- Provider payload retention is limited.
+- Model prompts contain only selected evidence.
+- User and provider text cannot alter workflow behavior.
+- Sensitive demographic traits are not inferred.
 
-### P5-06 — Perform final submission audit
+## P5-04 — Cost and reliability review
 
-Check the official rules, public demo availability, repository visibility, source/assets completeness, English description, license visibility, test access, and absence of secrets. Capture the final deployed URL and release commit/reference.
+Set and test:
 
-## 1. Run the complete test plan
+- Maximum Qloo requests per run.
+- Request timeout and retry count.
+- Opportunity result limit.
+- Overall analysis timeout.
+- Model token budget.
+- Raw payload retention window.
 
-### Unit tests
+Test empty, partial, rate-limited, timeout, invalid-parameter, and schema-mismatch paths.
 
-- Campaign and provider-input schemas.
-- Market-scope validation.
-- State-machine transitions.
-- Retry classification.
-- Qloo and Apify normalizers.
-- Score math and weight renormalization.
-- Evidence completeness.
-- Baseline comparison.
-- Report-output validation.
-
-### Contract and integration tests
-
-- Qloo success, empty, invalid, and schema-change fixtures.
-- Apify actor run lifecycle and dataset fixtures.
-- Database writes and foreign keys.
-- Idempotent analysis start and retry.
-- RLS and policy behavior.
-- Safe error serialization.
-
-### End-to-end acceptance test
-
-1. Open the public app.
-2. Submit the selected India-focused campaign.
-3. Confirm a stable campaign/run ID appears.
-4. Observe all persisted workflow stages.
-5. Confirm Qloo signals are visible with provenance.
-6. Confirm real or approved fixture-backed creator results appear.
-7. Confirm deterministic score breakdowns and evidence labels.
-8. Compare baseline and culture-informed rankings.
-9. Refresh during processing and confirm no duplicate run.
-10. Trigger or simulate a provider failure and confirm safe retry.
-11. Export or print client-safe results.
-12. Verify no secrets appear in browser requests, responses, logs, or bundles.
-
-## 2. Security review
-
-- Confirm all provider calls run server-side.
-- Inspect the client bundle for secret names and values.
-- Confirm service-role credentials are never passed to browser code.
-- Confirm public environment variables contain only public configuration.
-- Confirm RLS is enabled on every exposed table.
-- Confirm policies are owner-scoped where authentication exists.
-- Confirm unauthenticated demo mode cannot expose arbitrary private campaign rows.
-- Confirm Data API grants are intentional and separate from RLS.
-- Confirm no authorization logic uses editable user metadata.
-- Confirm logs redact API keys, headers, raw private payloads, and sensitive campaign data.
-- Confirm model prompts treat provider text as untrusted input.
-- Confirm provider URLs and headers are allowlisted.
-
-## 3. Reliability and cost review
-
-- Set candidate, retry, token, and provider-cost limits.
-- Confirm duplicate requests are idempotent.
-- Confirm long Apify runs do not depend on a browser session.
-- Confirm interrupted workflow recovery.
-- Confirm empty Qloo results produce a transparent limitation or labeled baseline-only mode.
-- Confirm fewer-than-requested candidates are reported as a limited sample.
-- Confirm raw payload retention and cleanup behavior.
-- Confirm health/status diagnostics do not expose credentials.
-
-## 4. Observability
-
-Log one structured, redacted event per workflow stage with:
-
-- Campaign ID.
-- Analysis run ID.
-- Stage.
-- Provider.
-- Duration.
-- Status.
-- Safe error code.
-
-Track:
-
-- Qloo success, latency, usable-signal count, and schema errors.
-- Apify run counts, completion/failure, latency, result count, and cost when available.
-- Baseline/culture-informed overlap and rank changes.
-- Component availability and evidence completeness.
-- Model validation failures and token usage when available.
-
-Do not log complete creator payloads or API keys in normal production logs.
-
-## 5. Deployment
-
-### Environment configuration
-
-Configure server-side secrets in the deployment provider:
-
-- Qloo base URL and API key.
-- Apify token.
-- Model provider key and model ID.
-- Supabase server credentials.
-
-Configure only genuinely public values with a public environment prefix. Verify preview and production environments separately.
-
-### Database
-
-- Apply migrations through the approved Supabase workflow.
-- Run database advisors/security checks where available.
-- Verify RLS, policies, grants, indexes, and retention behavior.
-- Run a test query against the deployed environment.
-- Confirm migration history is clean and reproducible.
-
-### Application
-
-- Deploy the Next.js application.
-- Confirm route-handler runtime and execution limits.
-- Confirm asynchronous workflow advancement works in the deployed environment.
-- Confirm status polling uses the app database, not direct provider polling from the client.
-- Verify public URL, error pages, and health behavior.
-
-## 6. Documentation and repository readiness
+## P5-05 — Deploy and document
 
 Update the README with:
 
-- Product summary and India-focused demo context.
-- Architecture and data flow.
-- Setup prerequisites.
-- Environment-variable names and server/client boundaries.
-- Validated-market limitation.
-- Qloo and Apify provider setup.
-- Database migration/setup instructions.
+- The focused product promise.
+- Supported vertical and cities.
+- Qloo setup and validated request behavior.
+- Environment variables and secret boundaries.
+- Database migrations.
 - Test commands.
-- Deployment instructions.
-- Known limitations and data-honesty rules.
+- Known limitations.
+- Demo instructions.
 - License.
-- Demo credentials or test instructions only if safe and necessary.
 
-Resolve the TDD references to `architecture.png` and `sequence.png` by adding the assets or removing the broken references.
+Deploy the database and application, then run the complete release scenario against the deployed environment.
 
-## 7. Demo preparation
+## P5-06 — Conduct practitioner validation
 
-Prepare a short, deterministic walkthrough:
+Show the product to at least three beauty/wellness strategists or agency users. Ask:
 
-1. Enter a global-brand campaign brief targeting the selected India-focused market.
-2. Show Qloo reference resolution and market signals.
-3. Show asynchronous creator discovery.
-4. Show evidence-linked ranking cards.
-5. Show baseline versus culture-informed results.
-6. Open a candidate and show missing-data labels.
-7. Show an AI campaign concept explicitly marked as a hypothesis.
-8. State limitations and explain that the product is globally extensible but only tested markets are supported.
+1. Is the launch decision clear?
+2. Are the recommendations understandable?
+3. Which recommendations would you validate commercially?
+4. What information is missing before acting?
+5. Would this replace any manual research step?
 
-Keep a fixture-backed fallback for provider outages, clearly labeled as demo data if used.
+Record feedback as product decisions, not as unsupported success claims.
 
 ## Final release checklist
 
 - [ ] All phase exit gates are complete.
-- [ ] Public demo works from a clean browser session.
-- [ ] Public repository contains source, assets, setup instructions, and license.
-- [ ] No secrets are committed or exposed.
-- [ ] RLS and access policies have been tested.
-- [ ] Provider fixtures and live validation notes are included where appropriate.
-- [ ] End-to-end acceptance test passes.
-- [ ] Known limitations are visible in the UI or README.
-- [ ] Demo narrative does not claim guaranteed cultural resonance, audience geography, or ROI.
-- [ ] Submission dates and rules are rechecked immediately before submission.
+- [ ] The public demo uses one focused release scenario.
+- [ ] Qloo evidence is visible for recommendations.
+- [ ] Facts, derived observations, and hypotheses are separated.
+- [ ] No audience, availability, or ROI claims are unsupported.
+- [ ] Security and RLS review passes.
+- [ ] A clean checkout follows the README.
+- [ ] Practitioner feedback is recorded.
+- [ ] Deferred creator functionality remains out of the MVP.

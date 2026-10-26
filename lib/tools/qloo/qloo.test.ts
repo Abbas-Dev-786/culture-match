@@ -81,6 +81,45 @@ test("Qloo resolves exact references and normalizes location signals", async () 
   )
 })
 
+test("Qloo accepts the current locality filter response shape", async () => {
+  const currentLocationFixture = {
+    ...(tasteFixture as Record<string, unknown>),
+    query: {
+      localities: {
+        filter: [
+          {
+            entity_id: "urn:entity:locality:mumbai",
+            name: "Mumbai",
+            disambiguation: "Mumbai, Maharashtra, India",
+          },
+        ],
+      },
+    },
+  }
+  const client = createFixtureClient(currentLocationFixture)
+  const result = await analyzeCulture(brief, client, "2026-10-23T00:00:00.000Z")
+  assert.equal(result.location.name, "Mumbai")
+  assert.equal(result.location.entityId, "urn:entity:locality:mumbai")
+})
+
+test("Qloo keeps provider signals when optional types metadata is missing", async () => {
+  const sparseTaste = JSON.parse(JSON.stringify(tasteFixture)) as {
+    results: { tags: Array<Record<string, unknown>> }
+  }
+  sparseTaste.results.tags = sparseTaste.results.tags.map((tag) => {
+    const withoutTypes = { ...tag }
+    delete withoutTypes.types
+    return withoutTypes
+  })
+  const client = createFixtureClient(sparseTaste)
+  const result = await analyzeCulture(brief, client, "2026-10-23T00:00:00.000Z")
+  assert.ok(result.signals.length > 0)
+  const tagSignal = result.signals.find(
+    (signal) => signal.evidence.fieldPath === "$.results.tags[]"
+  )
+  assert.deepEqual(tagSignal?.types, [])
+})
+
 test("Qloo keeps unresolved references explicit", async () => {
   const client = createQlooClient({
     baseUrl: "https://qloo.test",
@@ -256,6 +295,34 @@ test("Qloo serializes audience conditioning as a comma-separated signal", async 
   )
 })
 
+test("Qloo recommendation requests preserve the selected opportunity type", async () => {
+  let body: Record<string, unknown> | undefined
+  const client = createQlooClient({
+    baseUrl: "https://qloo.test",
+    searchUrl: "https://qloo.test/search",
+    insightsUrl: "https://qloo.test/v2/insights",
+    apiKey: "test-key",
+    fetchImpl: async (_input, init) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return new Response(JSON.stringify({ results: { entities: [] } }), {
+        status: 200,
+      })
+    },
+  })
+
+  await client.getRecommendations({
+    filterType: "urn:entity:place",
+    locationQuery: "Mumbai, India",
+    tagSignals: [{ tag: "urn:tag:style:modern", weight: 15 }],
+    take: 10,
+    explainability: true,
+  })
+
+  assert.equal(body?.["filter.type"], "urn:entity:place")
+  assert.equal(body?.["filter.location.query"], "Mumbai, India")
+  assert.equal(body?.["feature.explainability"], true)
+})
+
 test("Qloo classifies rate limits, schema mismatches, and empty signals", async () => {
   const rateLimited = createQlooClient({
     baseUrl: "https://qloo.test",
@@ -315,13 +382,17 @@ test("Qloo classifies rate limits, schema mismatches, and empty signals", async 
       ),
   })
   await assert.rejects(
-    () => analyzeCulture({ ...brief, culturalReferences: [] }, empty),
+    () =>
+      analyzeCulture(
+        { ...brief, brandName: "Unknown Brand", culturalReferences: [] },
+        empty
+      ),
     (error: unknown) =>
       error instanceof ProviderError && error.code === "EMPTY_RESULT"
   )
 })
 
-function createFixtureClient() {
+function createFixtureClient(tasteResponse: unknown = tasteFixture) {
   return createQlooClient({
     baseUrl: "https://qloo.test",
     searchUrl: "https://qloo.test/search",
@@ -332,7 +403,7 @@ function createFixtureClient() {
         ? entityFixture
         : input.includes("/tags")
           ? tagFixture
-          : tasteFixture
+          : tasteResponse
       return new Response(JSON.stringify(body), { status: 200 })
     },
   })

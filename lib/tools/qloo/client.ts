@@ -37,6 +37,11 @@ export interface QlooInsightsInput {
   explainability?: boolean
 }
 
+export interface QlooRecommendationInput
+  extends Omit<QlooInsightsInput, "filterType"> {
+  filterType: string
+}
+
 export interface QlooComparisonInput {
   filterType: string
   groupAEntityIds: string[]
@@ -65,6 +70,7 @@ export interface QlooClient {
   }): Promise<unknown>
   searchTags(input: { query: string; take: number }): Promise<unknown>
   getInsights(input: QlooInsightsInput): Promise<unknown>
+  getRecommendations(input: QlooRecommendationInput): Promise<unknown>
   compareInsights(input: QlooComparisonInput): Promise<unknown>
   getHeatmap(input: QlooHeatmapInput): Promise<unknown>
   getLocationTaste(input: {
@@ -86,7 +92,7 @@ interface QlooClientOptions {
   timeoutMs?: number
 }
 
-const DEFAULT_TIMEOUT_MS = 20_000
+const DEFAULT_TIMEOUT_MS = 60_000
 export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
   const config = readQlooConfig(options)
   const fetchImpl = options.fetchImpl ?? globalThis.fetch
@@ -126,7 +132,7 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
         "filter.type": input.filterType,
         take: input.take,
         ...(input.locationQuery
-          ? { "signal.location.query": input.locationQuery }
+          ? { "filter.location.query": input.locationQuery }
           : {}),
         ...(input.locationId ? { "signal.location": input.locationId } : {}),
         ...(input.entitySignals && input.entitySignals.length > 0
@@ -161,6 +167,53 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
         config.timeoutMs,
         "qloo",
         qlooInsightsResponseSchema,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      )
+    },
+    async getRecommendations(input) {
+      const body: Record<string, unknown> = {
+        "filter.type": input.filterType,
+        take: input.take,
+        ...(input.locationQuery
+          ? { "filter.location.query": input.locationQuery }
+          : {}),
+        ...(input.locationId ? { "filter.location": input.locationId } : {}),
+        ...(input.entitySignals && input.entitySignals.length > 0
+          ? { "signal.interests.entities": input.entitySignals }
+          : {}),
+        ...(input.tagSignals && input.tagSignals.length > 0
+          ? { "signal.interests.tags": input.tagSignals }
+          : {}),
+        ...(input.tagOperator && input.tagSignals && input.tagSignals.length > 0
+          ? { "operator.signal.interests.tags": input.tagOperator }
+          : {}),
+        ...(input.audienceIds && input.audienceIds.length > 0
+          ? { "signal.demographics.audiences": input.audienceIds.join(",") }
+          : {}),
+        ...(input.audienceWeight !== undefined
+          ? { "signal.demographics.audiences.weight": input.audienceWeight }
+          : {}),
+        ...(input.ageRange
+          ? { "signal.demographics.age": input.ageRange }
+          : {}),
+        ...(input.gender
+          ? { "signal.demographics.gender": input.gender }
+          : {}),
+        ...(input.explainability !== undefined
+          ? { "feature.explainability": input.explainability }
+          : {}),
+      }
+      return requestProviderJson(
+        fetchImpl,
+        new URL(config.insightsUrl),
+        config.apiKey,
+        config.timeoutMs,
+        "qloo",
+        z.unknown(),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -239,7 +292,7 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
 
       const url = new URL(config.insightsUrl)
       url.searchParams.set("filter.type", input.filterType)
-      url.searchParams.set("signal.location.query", input.locationQuery)
+      url.searchParams.set("filter.location.query", input.locationQuery)
       url.searchParams.set("take", String(input.take))
       if (input.entityIds && input.entityIds.length > 0) {
         url.searchParams.set(

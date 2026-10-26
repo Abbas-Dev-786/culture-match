@@ -1,228 +1,99 @@
-# Phase 4 — Results Experience and Export
+# Phase 4 — Focused Product Experience
 
-**Purpose:** Turn the workflow and matching contracts into a clear, responsive product experience.
+**Purpose:** Turn the pivoted workflow into a clear, narrow product experience for a beauty/wellness market-entry decision.
 
 **Depends on:** Phase 3 result contracts
 
-**Exit condition:** A new tester can submit a campaign, follow progress, inspect the first recommendations, understand uncertainty, and compare baseline with culture-informed results without developer assistance.
+**Exit condition:** A new user can complete an analysis and understand the top opportunities, evidence, limitations, and activation brief without developer assistance.
 
-## Build order
+## P4-01 — Replace the campaign form
 
-### P4-01 — Build the campaign form against the API schema
-
-Create or update:
-
-- `app/campaigns/new/page.tsx`
-- `components/campaign-form.tsx`
-- Shared form validation/schema mapping.
-
-Submit only the application contract. Display validated-market limitations and preserve optional fields as absent rather than inventing defaults.
-
-### P4-02 — Build progress and recovery states
-
-Create `components/analysis-progress.tsx` and connect it to the status endpoint. Implement bounded polling, terminal-state handling, refresh recovery, failure messaging, and retry action.
-
-### P4-03 — Build the results data view
-
-Create:
-
-- `components/culture-profile.tsx`
-- `components/creator-card.tsx`
-- `components/match-breakdown.tsx`
-- `components/baseline-comparison.tsx`.
-
-Use client-safe results contracts only. Render explicit badges for verified, provider-derived, derived, unavailable, and hypothesis content.
-
-### P4-04 — Build the campaign detail route
-
-Connect `app/campaigns/[id]/page.tsx` to summary, culture profile, rankings, comparison, and creator detail data. Add loading, empty, partial, and error states.
-
-### P4-05 — Add export after the dashboard works
-
-Implement print view or CSV from the normalized client-safe result model. Test that secrets, raw payloads, and unsupported claims cannot enter the export.
-
-### P4-06 — Perform accessibility and responsive pass
-
-Test keyboard navigation, focus states, status announcements, contrast, mobile widths, long labels, and comparison layout before visual polish.
-
-## 1. Build the campaign form
-
-Required inputs:
+The form should ask only for:
 
 - Brand name.
-- Product/category.
-- Country.
-- Optional region/state.
-- Optional city.
-- Market scope.
-- Campaign objective.
+- Product.
+- Target city.
+- Opportunity type.
+- Two to five cultural references.
+- Launch intent.
 
-Optional inputs:
+Add concise guidance that the result is cultural decision support, not proof of partnership availability or commercial success.
 
-- Cultural references.
-- Preferred content language.
-- Follower range.
-- Budget and currency.
-- Search mode or comparison toggle.
+Do not expose follower ranges, creator fees, raw Qloo audience IDs, or advanced demographic fields in the MVP form.
 
-Form behavior:
+## P4-02 — Build progress and recovery states
 
-- Explain that country/region/city is a market research target, not proof of creator audience geography.
-- Validate client-side for usability and server-side for security.
-- Show the supported/validated market limitation.
-- Surface ambiguous Qloo reference matches for confirmation.
-- Prevent impossible follower and budget ranges.
-- Show a clear consent/notice if campaign data is persisted.
+Show these stages:
 
-## 2. Build progress and status views
+1. Resolving inputs.
+2. Researching city culture.
+3. Discovering opportunities.
+4. Preparing activation brief.
+5. Complete or failed.
 
-Show the persisted workflow stages:
+Polling must read the application status endpoint only. Refreshing the page must not create duplicate Qloo work.
 
-1. Campaign received.
-2. Resolving references.
-3. Researching market culture.
-4. Preparing creator search.
-5. Searching creators.
-6. Waiting for provider results.
-7. Normalizing and scoring.
-8. Generating report.
-9. Complete or failed.
+## P4-03 — Build the market fingerprint view
 
-The UI polls only the application status endpoint with bounded intervals and stops on terminal states. It must not create duplicate runs when the page reloads.
+Show:
 
-For failures, show:
+- Resolved city.
+- Resolved brand, product tags, and references.
+- Market, brand, product, reference, and combined layers.
+- Signal labels, types, IDs, and affinity/rank where documented.
+- Operators and weights used.
+- Unresolved inputs and limitations.
 
-- Safe explanation.
-- Whether retry is available.
-- What data was preserved.
-- A retry action that creates a new attempt without erasing history.
+Use clear labels for user input, provider-reported, derived, and hypothesis content.
 
-## 3. Build the campaign summary
+## P4-04 — Build opportunity cards
 
-Display:
+Each card should show:
 
-- Brand and product/category.
-- Selected market and scope.
-- Campaign objective.
-- Selected references.
-- Analysis timestamp.
-- Qloo status.
-- Apify status.
-- Candidate sample size.
-- Data limitations.
+- Entity name, type, and public metadata.
+- Qloo rank or affinity where available.
+- Related campaign signals.
+- “Why it appeared.”
+- Evidence references.
+- Commercial questions to validate.
+- No unsupported claims about popularity, availability, or expected performance.
 
-Use explicit labels such as `Verified`, `Provider-derived`, `Derived`, `User input`, and `AI hypothesis`.
+## P4-05 — Build the activation brief
 
-## 4. Build the regional culture profile
+Render the structured brief in separate sections:
 
-Show only actual returned Qloo signals:
+- Evidence-backed cultural territory.
+- Suggested launch context.
+- Activation directions.
+- Hypotheses.
+- Open validation questions.
 
-- Signal label.
-- Signal type.
-- Returned score or strength only when its meaning is documented.
-- Related entity ID or source reference where useful.
-- Location/query scope.
-- Directional-data caveat.
+The UI should make it impossible to confuse an AI suggestion with a Qloo fact.
 
-Do not use broad cultural stereotypes or convert a small result set into universal claims about a population.
+## P4-06 — Add optional visual layers
 
-## 5. Build creator ranking cards
+Only after the core results are usable:
 
-Each card should contain:
-
-- Creator name and handle.
-- Public profile URL when returned.
-- Platform.
-- Follower count, engagement, verification, or posting information only when returned.
-- Campaign Fit Score or an explicit unavailable state.
-- Evidence completeness.
-- Component breakdown.
-- Two or three evidence-linked reasons.
-- Missing/unverified fields.
-- AI-generated campaign concept labeled as a hypothesis.
-
-Do not imply that ranking equals campaign success or that a creator reaches the selected market unless audience geography is verified.
-
-## 6. Build baseline comparison
-
-Provide either a side-by-side view or a switchable comparison containing:
-
-- Baseline ranking.
-- Culture-informed ranking.
-- Candidate overlap.
-- Rank movement.
-- Added/removed candidates.
-- Evidence behind meaningful changes.
-- A plain-language conclusion, including “little or no material change” when appropriate.
-
-## 7. Build creator detail view
-
-The detail view should group information into:
-
-- Profile facts.
-- Provider metrics.
-- Culture-related evidence.
-- Score components.
-- Unknown or unverified fields.
-- Caveats.
-- Campaign concept.
-
-Evidence links should resolve to a human-readable source label and field path, not expose raw credentials or internal secrets.
-
-## 8. Add export only after the core view works
-
-Implement the smallest useful export first:
-
-- Print-friendly results page, or
-- CSV containing client-safe normalized fields and scores.
-
-Never include:
-
-- API tokens.
-- Raw request headers.
-- Internal provider payloads unless explicitly designed and redacted.
-- Private logs.
-- Unverified claims presented as facts.
-
-PDF generation is optional and should not delay the demo path.
-
-## 9. Accessibility and responsive behavior
-
-- Use semantic headings, forms, tables, and status regions.
-- Ensure keyboard navigation for form, tabs, cards, and retry actions.
-- Provide readable contrast and visible focus states.
-- Do not communicate status by color alone.
-- Support narrow mobile widths and desktop result comparison.
-- Provide loading, empty, partial, and error states.
-- Make long evidence labels and creator names wrap safely.
+- Add a Qloo heatmap with a clear “cultural signal concentration” label.
+- Add an entity comparison panel.
+- Add print view or CSV export.
 
 ## Tests and acceptance evidence
 
-- New tester can submit a valid campaign without developer help.
-- Invalid form data is rejected with actionable messages.
-- Refreshing during analysis does not duplicate provider runs.
-- Progress stops correctly on success and failure.
-- Culture profile displays only stored Qloo signals.
-- Creator cards distinguish verified, derived, missing, and hypothetical content.
-- Baseline comparison renders for zero, partial, and full overlap.
-- Export contains only client-safe fields.
-- Keyboard and mobile smoke tests pass.
+- A user can submit the focused brief without developer help.
+- Invalid city, opportunity type, or missing references are actionable.
+- Progress survives refresh.
+- Fingerprint layers render only stored Qloo results.
+- Opportunity cards expose evidence and unknowns.
+- Activation briefs clearly label hypotheses.
+- Export contains no secrets or raw internal payloads.
+- Keyboard, mobile, loading, empty, partial, and error states work.
 
 ## Deliverables
 
-- Campaign form and validation UI.
-- Progress/status UI.
-- Culture profile.
-- Creator cards and detail view.
-- Baseline comparison.
-- Optional print/CSV export.
-- Responsive and accessible styling.
-
-## Exit checklist
-
-- [ ] Complete campaign can be submitted from the UI.
-- [ ] Progress and recovery are understandable.
-- [ ] First three recommendations are interpretable.
-- [ ] Evidence and uncertainty are visible.
-- [ ] Baseline comparison is honest and usable.
-- [ ] No secrets or raw internal payloads appear in the UI/export.
+- Focused analysis form.
+- Progress and retry UI.
+- Market fingerprint component.
+- Opportunity card/list view.
+- Activation brief component.
+- Optional comparison, heatmap, and export views.

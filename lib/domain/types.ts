@@ -2,6 +2,149 @@ export type JsonPrimitive = string | number | boolean | null
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[]
 export type JsonObject = { [key: string]: JsonValue }
 
+export const launchOpportunityTypes = [
+  "urn:entity:brand",
+  "urn:entity:place",
+  "urn:entity:artist",
+  "urn:entity:person",
+  "urn:entity:podcast",
+  "urn:entity:movie",
+  "urn:entity:tv_show",
+  "urn:entity:destination",
+  "urn:entity:book",
+  "urn:entity:videogame",
+] as const
+
+export type LaunchOpportunityType = (typeof launchOpportunityTypes)[number]
+
+export type LaunchAnalysisStatus =
+  | "queued"
+  | "resolving_inputs"
+  | "researching_market"
+  | "discovering_opportunities"
+  | "generating_brief"
+  | "completed"
+  | "failed"
+
+export type LaunchRunStatus = "queued" | "running" | "completed" | "failed"
+
+export type LaunchWorkflowStage =
+  | "queued"
+  | "resolving_inputs"
+  | "researching_market"
+  | "discovering_opportunities"
+  | "generating_brief"
+
+export interface LaunchAnalysisBrief {
+  brandName: string
+  product: string
+  country: string
+  city: string
+  opportunityType: LaunchOpportunityType
+  culturalReferences: string[]
+  launchIntent: string
+}
+
+export interface LaunchOpportunityCandidate {
+  provider: "qloo"
+  entityId: string
+  name: string
+  types: string[]
+  providerRank?: number
+  affinity?: number
+  popularity?: number
+  relatedSignalIds: string[]
+  metadata: JsonObject
+  evidence: EvidenceRef[]
+  missingFields: string[]
+}
+
+export interface SafeLaunchAnalysis {
+  id: string
+  brandName: string
+  product: string
+  country: string
+  city: string
+  opportunityType: LaunchOpportunityType
+  culturalReferences: string[]
+  launchIntent: string
+  status: LaunchAnalysisStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SafeLaunchRun {
+  id: string
+  analysisId: string
+  attempt: number
+  status: LaunchRunStatus
+  stage: LaunchWorkflowStage
+  errorCode?: string
+  errorMessage?: string
+  queuedAt: string
+  startedAt?: string
+  completedAt?: string
+  stageMessage: string
+  retryAvailable: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SafeLaunchOpportunity {
+  id: string
+  entityId: string
+  name: string
+  types: string[]
+  providerRank?: number
+  affinity?: number
+  popularity?: number
+  relatedSignalIds: string[]
+  evidence: EvidenceRef[]
+  metadata: JsonObject
+  missingFields: string[]
+  rank: number
+  rankingBasis: "provider_rank" | "affinity" | "popularity" | "stable_entity_id"
+  rankingAlgorithmVersion: string
+  evidenceCompleteness: number
+  caveats: string[]
+}
+
+export interface LaunchActivationDirection {
+  title: string
+  description: string
+  rationale: string
+  evidenceKeys: string[]
+  hypothesis: true
+}
+
+export interface LaunchActivationBrief {
+  schemaVersion: "phase3-v1"
+  culturalTerritory: {
+    title: string
+    description: string
+    evidenceKeys: string[]
+  }
+  recommendedLaunchContext: string
+  activationDirections: LaunchActivationDirection[]
+  hypotheses: Array<{
+    statement: string
+    evidenceKeys: string[]
+    hypothesis: true
+  }>
+  openQuestions: string[]
+  caveats: string[]
+}
+
+export interface SafeLaunchActivationReport {
+  schemaVersion: "phase3-v1"
+  generationMode: "deterministic" | "openrouter"
+  modelProvider?: string
+  modelId?: string
+  promptVersion: string
+  generatedAt: string
+  brief: LaunchActivationBrief
+}
+
 export type MarketScope = "country" | "region" | "city"
 
 export interface TargetMarket {

@@ -110,3 +110,50 @@ test("creator candidate uniqueness migration removes the legacy three-column con
     assert.match(migration, /creator_candidates_run_provider_variant_key/)
   }
 })
+
+test("launch intelligence migration defines owner-scoped workflow tables", async () => {
+  const migrationPaths = [
+    new URL("./migrations/0007_launch_intelligence.sql", import.meta.url),
+    new URL(
+      "../../supabase/migrations/20261026160000_launch_intelligence.sql",
+      import.meta.url
+    ),
+  ]
+  const migrations = await Promise.all(migrationPaths.map((path) => readFile(path, "utf8")))
+
+  for (const sql of migrations) {
+    for (const table of [
+      "launch_analyses",
+      "launch_analysis_runs",
+      "launch_cultural_profiles",
+      "launch_opportunities",
+    ]) {
+      assert.match(sql, new RegExp(`create table if not exists public\\.${table}`))
+      assert.match(sql, new RegExp(`alter table public\\.${table} enable row level security`))
+    }
+    assert.match(sql, /unique \(run_id, provider, entity_id\)/i)
+    assert.match(sql, /grant select, insert, update, delete[\s\S]*to authenticated;/i)
+    assert.match(sql, /revoke all[\s\S]*from public, anon;/i)
+  }
+})
+
+test("activation brief migration adds ranked opportunities and owner-scoped reports", async () => {
+  const migrationPaths = [
+    new URL("./migrations/0008_launch_activation_brief.sql", import.meta.url),
+    new URL(
+      "../../supabase/migrations/20261027100000_launch_activation_brief.sql",
+      import.meta.url
+    ),
+  ]
+  const migrations = await Promise.all(migrationPaths.map((path) => readFile(path, "utf8")))
+
+  for (const sql of migrations) {
+    assert.match(sql, /opportunity_rank/)
+    assert.match(sql, /ranking_algorithm_version/)
+    assert.match(sql, /evidence_completeness/)
+    assert.match(sql, /create table if not exists public\.launch_activation_reports/)
+    assert.match(sql, /alter table public\.launch_activation_reports enable row level security/)
+    assert.match(sql, /revoke all[\s\S]*launch_activation_reports from public, anon;/i)
+    assert.match(sql, /grant select, insert, update, delete[\s\S]*launch_activation_reports to authenticated;/i)
+  }
+})

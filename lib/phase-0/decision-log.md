@@ -1,5 +1,13 @@
 # Phase 0 decision log
 
+## 2026-10-26 product pivot
+
+- Scope narrowed from a broad creator/culture marketplace to launch and partnership intelligence for premium beauty and wellness brands entering Indian cities.
+- Phase 0 markets: Mumbai, Bengaluru, and Delhi.
+- Phase 0 output: Qloo cultural fingerprint plus culturally adjacent Qloo brands or places.
+- Apify and creator discovery are explicitly deferred. They are not part of the Phase 0 feasibility gate.
+- The MVP does not depend on an LLM. Provider-reported signals, deterministic normalization, evidence paths, and workflow state are sufficient for the first customer test.
+
 **Status:** Phase 0 complete; ready for Phase 1 implementation
 
 **Date:** 23 October 2026

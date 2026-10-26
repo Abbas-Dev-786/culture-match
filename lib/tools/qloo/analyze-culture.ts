@@ -30,15 +30,23 @@ export interface CultureResearchResult {
   rawPayload?: JsonObject
 }
 
+export interface AnalyzeCultureOptions {
+  referenceEntityTypes?: string
+  includeComparison?: boolean
+  includeHeatmap?: boolean
+}
+
 export async function analyzeCulture(
   brief: CampaignBrief,
   client: QlooClient,
-  observedAt = new Date().toISOString()
+  observedAt = new Date().toISOString(),
+  options: AnalyzeCultureOptions = {}
 ): Promise<CultureResearchResult> {
   const resolvedReferences = await resolveEntities(
     [...new Set([brief.brandName, ...brief.culturalReferences])],
     client,
-    observedAt
+    observedAt,
+    options.referenceEntityTypes
   )
   const resolvedTags = await resolveTagsWithFallback(
     [brief.productCategory],
@@ -56,41 +64,38 @@ export async function analyzeCulture(
   )
   const combinedLayer = layers.find((layer) => layer.group === "combined")
   const marketLayer = layers.find((layer) => layer.group === "market")
-  const primaryLayer = [combinedLayer, marketLayer].find((layer) =>
-    layer?.signals.some(
-      (signal) => signal.evidence.fieldPath === "$.results.tags[]"
-    )
-  )
+  const primaryLayer = [
+    combinedLayer,
+    marketLayer,
+    layers.find((layer) => layer.group === "product"),
+    layers.find((layer) => layer.group === "reference"),
+    layers.find((layer) => layer.group === "brand"),
+  ].find((layer) => layer?.signals.some(isProviderSignal))
   const signalRecords = primaryLayer ? dedupeSignals(primaryLayer.signals) : []
   const signals = signalRecords.map(recordToCultureSignal)
 
-  if (
-    !primaryLayer ||
-    !primaryLayer.signals.some(
-      (signal) => signal.evidence.fieldPath === "$.results.tags[]"
-    )
-  ) {
+  if (!primaryLayer || signalRecords.length === 0) {
     throw new ProviderError({
       provider: "qloo",
       code: "EMPTY_RESULT",
-      message: "Qloo returned no usable cultural signals for the target market",
+      message:
+        "Qloo returned no usable cultural signals for the selected city or references. Try a more specific city and recognizable cultural references.",
       retryable: false,
     })
   }
 
-  const comparison = await loadComparison(
-    brief,
-    locationQuery,
-    resolvedReferences,
-    client
-  )
-  const heatmap = await loadHeatmap(
-    brief,
-    locationQuery,
-    resolvedReferences,
-    resolvedTags,
-    client
-  )
+  const comparison = options.includeComparison === false
+    ? undefined
+    : await loadComparison(brief, locationQuery, resolvedReferences, client)
+  const heatmap = options.includeHeatmap === false
+    ? undefined
+    : await loadHeatmap(
+        brief,
+        locationQuery,
+        resolvedReferences,
+        resolvedTags,
+        client
+      )
 
   const fingerprint = createFingerprint(
     locationQuery,
@@ -656,13 +661,13 @@ function parseSignal(
 ): CultureSignal[] {
   if (!isRecord(value)) return []
   const signalId = readString(value.tag_id) ?? readString(value.tag_value)
-  const name = readString(value.name)
+  const name = readString(value.name) ?? readString(value.tag_value)
   const types = readStringArray(value.types)
   const query = isRecord(value.query) ? value.query : undefined
   const affinity =
     query && typeof query.affinity === "number" ? query.affinity : undefined
 
-  if (!signalId || !name || types.length === 0) return []
+  if (!signalId || !name) return []
   return [
     {
       provider: "qloo",
@@ -684,8 +689,13 @@ function parseSignal(
   ]
 }
 
+function isProviderSignal(signal: QlooSignalRecord): boolean {
+  return signal.evidence.source === "qloo"
+}
+
 function parseLocation(value: unknown): CultureResearchResult["location"] {
-  if (!isRecord(value) || !isRecord(value.signal)) {
+  const signal = readLocationSignal(value)
+  if (!signal) {
     throw new ProviderError({
       provider: "qloo",
       code: "SCHEMA_MISMATCH",
@@ -693,8 +703,9 @@ function parseLocation(value: unknown): CultureResearchResult["location"] {
       retryable: false,
     })
   }
-  const entityId = readString(value.signal.entity_id)
-  const name = readString(value.signal.name)
+  const entityId =
+    readString(signal.entity_id) ?? readString(signal.id)
+  const name = readString(signal.name)
   if (!name) {
     throw new ProviderError({
       provider: "qloo",
@@ -703,12 +714,22 @@ function parseLocation(value: unknown): CultureResearchResult["location"] {
       retryable: false,
     })
   }
-  const disambiguation = readString(value.signal.disambiguation)
+  const disambiguation = readString(signal.disambiguation)
   return {
     name,
     ...(entityId ? { entityId } : {}),
     ...(disambiguation ? { disambiguation } : {}),
   }
+}
+
+function readLocationSignal(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value)) return undefined
+  if (isRecord(value.signal)) return value.signal
+  if (Array.isArray(value.filter)) {
+    const first = value.filter.find(isRecord)
+    if (first) return first
+  }
+  return undefined
 }
 
 function createFingerprint(

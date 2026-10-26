@@ -188,7 +188,7 @@ function toSafeCultureProfile(
   }
 }
 
-function readFingerprint(value: Json | undefined): QlooFingerprint | undefined {
+export function readFingerprint(value: Json | undefined): QlooFingerprint | undefined {
   if (!isObject(value) || typeof value.locationQuery !== "string") return undefined
   if (!isObject(value.location) || typeof value.location.name !== "string") return undefined
   if (!Array.isArray(value.signals)) return undefined

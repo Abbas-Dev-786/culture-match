@@ -1,3 +1,8 @@
+import type {
+  LaunchAnalysisBrief,
+  LaunchOpportunityType,
+} from "../domain/types.ts"
+
 export type MarketScope = "city" | "region" | "country"
 
 export type MarketValidationStatus =
@@ -67,4 +72,51 @@ export const phase0Markets: readonly DemoMarket[] = [phase0DemoMarket]
 
 export function getPhase0Market(id: string): DemoMarket | undefined {
   return phase0Markets.find((market) => market.id === id)
+}
+
+export const phase0LaunchCities = [
+  "Mumbai",
+  "Bengaluru",
+  "Delhi",
+] as const
+
+export const phase0LaunchOpportunityTypes: readonly LaunchOpportunityType[] = [
+  "urn:entity:brand",
+  "urn:entity:place",
+]
+
+export const phase0LaunchBriefs: readonly LaunchAnalysisBrief[] = [
+  {
+    brandName: "Aesop",
+    product: "premium facial cleanser",
+    country: "India",
+    city: "Mumbai",
+    opportunityType: "urn:entity:brand",
+    culturalReferences: ["Tata", "The Bombay Canteen"],
+    launchIntent: "Find culturally adjacent brand partners for a premium skincare launch.",
+  },
+  {
+    brandName: "Forest Essentials",
+    product: "ayurvedic body care",
+    country: "India",
+    city: "Bengaluru",
+    opportunityType: "urn:entity:place",
+    culturalReferences: ["Yoga", "Theobroma"],
+    launchIntent: "Find places that could host a culturally relevant wellness launch.",
+  },
+  {
+    brandName: "Clinique",
+    product: "daily moisturizer",
+    country: "India",
+    city: "Delhi",
+    opportunityType: "urn:entity:brand",
+    culturalReferences: ["Khan Market", "Fabindia"],
+    launchIntent: "Find complementary lifestyle brands for a city launch.",
+  },
+]
+
+export function isPhase0LaunchCity(value: string): boolean {
+  return phase0LaunchCities.some(
+    (city) => city.toLocaleLowerCase() === value.trim().toLocaleLowerCase()
+  )
 }

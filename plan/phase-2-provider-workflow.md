@@ -1,192 +1,104 @@
-# Phase 2 — Provider Adapters and Analysis Workflow
+# Phase 2 — Qloo Research and Opportunity Workflow
 
-**Purpose:** Connect the validated Qloo and Apify contracts to a resumable, observable analysis workflow.
+**Purpose:** Connect the validated Qloo contract to a resumable workflow that produces a market fingerprint and opportunity candidates.
 
 **Depends on:** Phases 0 and 1
 
-**Exit condition:** A campaign can execute Qloo research and an asynchronous Apify run, persist each stage, recover from transient errors, and expose progress through the application status endpoint.
+**Exit condition:** A focused analysis can resolve inputs, persist layered Qloo research, discover opportunities, and recover safely after interruption.
 
-## Build order
+## P2-01 — Harden the Qloo adapter
 
-### P2-01 — Implement Qloo parsing against fixtures
+Update the Qloo adapter behind a single interface for:
 
-Create:
+- Entity search.
+- Tag search.
+- Location resolution.
+- Insights requests.
+- Entity comparison.
+- Optional heatmaps.
 
-- `lib/tools/qloo/client.ts`
-- `lib/tools/qloo/resolve-entities.ts`
-- `lib/tools/qloo/analyze-culture.ts`
-- `lib/validation/provider-payloads.ts`
+The adapter must:
 
-Make fixture tests pass before enabling live calls. Add explicit handling for unresolved references, empty signals, invalid parameters, rate limits, and schema mismatch.
+- Use server-only configuration.
+- Allowlist endpoints and parameters.
+- Validate request combinations before sending them.
+- Parse responses with Zod schemas.
+- Return explicit ambiguous, unresolved, empty, and schema-error states.
+- Persist sanitized request summaries and provider provenance.
 
-### P2-02 — Implement Apify lifecycle against fixtures
+Verify the active API parameter names against Phase 0 fixtures. Do not silently preserve a parameter from the old creator workflow if the live contract differs.
 
-Create:
+## P2-02 — Build the cultural fingerprint
 
-- `lib/tools/apify/client.ts`
-- `lib/tools/apify/search-creators.ts`
-- `lib/tools/apify/get-run-results.ts`
+For a validated brief, run these layers where supported:
 
-First test start/status/dataset behavior with fixtures. Then enable the live actor behind the same interface. Persist the actor run ID before any wait or poll operation.
+1. Market: city-only signals.
+2. Brand: brand signals within the city.
+3. Product: product/tag signals within the city.
+4. Reference: selected cultural references within the city.
+5. Combined: weighted brand, product, and reference signals.
 
-### P2-03 — Connect the workflow stages
+Store IDs, names, types, affinity/rank values, source groups, operators, weights, query scope, and evidence references.
 
-Create `lib/workflow/run-campaign-analysis.ts` and connect the state machine to the provider adapters. Every stage must persist its result before advancing. A process restart must be able to resume from the last completed stage.
+## P2-03 — Discover opportunities
 
-### P2-04 — Add retries, budgets, and idempotency
+Use the selected opportunity type to request Qloo results from the combined signal set. Enforce:
 
-Create `lib/workflow/retry.ts` and a provider error classifier. Add per-provider timeout, retry, result-count, and cost limits. Guard actor-start with the analysis idempotency key.
+- One opportunity type per run.
+- A server-side result limit.
+- The validated city scope.
+- No arbitrary free-text entity types.
 
-### P2-05 — Add search-plan generation and fallback
+Normalize each returned entity into `OpportunityCandidate`. Deduplicate by Qloo entity ID.
 
-Create the search-plan schema and model wrapper. Validate every generated filter against the Phase 0 actor field matrix. Add a deterministic fallback query that works without the model.
+## P2-04 — Orchestrate the workflow
 
-### P2-06 — Connect status and recovery
+Implement stages:
 
-Update status/retry routes to read persisted state and create explicit retry attempts. Add a controlled development-only mechanism for advancing or polling a run without making the browser responsible for provider execution.
+1. Resolve inputs.
+2. Research market.
+3. Discover opportunities.
+4. Generate activation brief.
+5. Complete.
 
-## 1. Implement the Qloo adapter
+Persist stage output before advancing. A process restart must resume from the last completed stage. Browser polling reads application state only; it never calls Qloo directly and never starts duplicate work.
 
-Create isolated modules for:
+## P2-05 — Add retries and budgets
 
-- Entity search and resolution.
-- Location signal construction.
-- Taste/Insights request construction.
-- Response parsing.
-- Evidence normalization.
+Retry only transient network, timeout, rate-limit, and selected 5xx errors. Do not retry invalid parameters, authentication failures, or schema mismatches automatically.
 
-Adapter rules:
+Configure:
 
-- Use server-side `fetch` or the selected official client.
-- Read base URL and API key from server-only environment variables.
-- Construct only allowlisted paths and parameters.
-- Validate `filter.type` combinations before sending requests.
-- Persist request summaries without secrets.
-- Preserve the raw response only under the retention policy.
-- Return explicit unresolved and ambiguous results.
-- Never silently replace a user reference with a low-confidence entity.
-
-Implement safe error classes for:
-
-- Authentication failure.
-- Invalid parameter combination.
-- Rate limit.
-- Timeout/network failure.
-- Empty result.
-- Response-schema mismatch.
-
-## 2. Implement the Apify adapter
-
-Create isolated modules for:
-
-- Actor input validation.
-- Actor start.
-- Run status retrieval.
-- Default dataset retrieval.
-- Dataset item validation and normalization.
-
-Adapter rules:
-
-- Start the actor only from the workflow, never from a browser poll.
-- Persist actor run ID and dataset ID immediately after start.
-- Use the actor schema discovered in Phase 0.
-- Apply the server-enforced candidate limit and cost guard.
-- Treat `SUCCEEDED`, `FAILED`, `ABORTED`, `TIMED-OUT`, and running states explicitly.
-- Read dataset items only after successful completion.
-- Preserve source fields needed for provenance, but apply raw-payload retention limits.
-- Do not assume bio, language, audience geography, engagement, fees, or post content exists.
-
-## 3. Build the workflow runner
-
-Implement a bounded workflow with these stages:
-
-1. Create or load the campaign/run.
-2. Resolve brand and cultural references.
-3. Execute validated Qloo research.
-4. Store normalized culture signals.
-5. Build and validate the creator-search plan.
-6. Start one Apify run using the idempotency key.
-7. Advance status through internal polling, webhook, or the selected background mechanism.
-8. Read and normalize dataset items.
-9. Hand off to scoring.
-10. Generate the report only after deterministic results exist.
-
-The workflow must be safe to resume after a process restart. Each stage should be idempotent or guarded by a persisted stage result.
-
-## 4. Implement retries and timeouts
-
-Retry only transient conditions:
-
-- HTTP 429.
-- Selected 5xx responses.
-- Temporary network failures.
-- Provider timeouts where repeating is safe.
-
-Do not automatically retry:
-
-- Invalid input.
-- Authentication failures.
-- Unsupported Qloo parameters.
-- Actor schema validation failures.
-- Permanent provider errors.
-
-For every retry, record attempt count, delay class, provider error code, and safe message. Enforce a maximum retry count and total run budget.
-
-## 5. Implement the search-plan boundary
-
-If an LLM is used to formulate the creator query:
-
-- Provide only normalized campaign data and verified Qloo signals.
-- Restrict output to a schema containing query text and supported actor filters.
-- Reject unsupported filters and URLs.
-- Do not let the model alter credentials, headers, endpoints, limits, or database writes.
-- Keep a deterministic fallback query for model failure.
-
-The baseline query must use the same explicit campaign constraints without Qloo-derived terms. The culture-informed query may add only the validated cultural signals selected by the workflow.
-
-## 6. Implement application status and recovery
-
-The status endpoint should read the database only and return:
-
-- Campaign ID.
-- Analysis run ID.
-- Current status and stage.
-- Human-readable stage message.
-- Updated timestamp.
-- Safe error object, if any.
-- Retry availability.
-
-It must not start a provider run or perform an unbounded provider poll.
-
-On refresh or reconnect, the UI should resume from the persisted status. On failure, the user should be able to start a new attempt without erasing the previous record.
+- Request timeout.
+- Maximum attempts.
+- Maximum Qloo requests per analysis.
+- Result limit.
+- Overall analysis timeout.
 
 ## Tests and fixtures
 
-- Qloo success, no-result, invalid-parameter, rate-limit, and schema-mismatch fixtures.
-- Apify start, running, success, failure, abort, timeout, and dataset fixtures.
-- Duplicate analyze requests create one provider run.
-- Restarting a workflow resumes from the last persisted stage.
-- Retries stop at the configured limit.
-- Browser status polling never invokes actor start.
-- Provider secrets never appear in logs, serialized errors, or client responses.
-- A model-generated search plan cannot introduce unsupported filters.
+- Entity and tag success, ambiguous, unresolved, and empty fixtures.
+- Each fingerprint layer fixture.
+- Opportunity success and unsupported-type fixtures.
+- Heatmap and comparison fixtures, if enabled.
+- Retry and timeout tests.
+- Duplicate analysis-start tests.
+- Restart/resume tests.
+- Provider secrets absent from logs and responses.
 
 ## Deliverables
 
-- Qloo adapter.
-- Apify adapter.
-- Workflow runner and stage transitions.
+- Qloo adapter and schemas.
+- Fingerprint builder.
+- Opportunity discovery workflow.
 - Retry and timeout utilities.
-- Search-plan schema and deterministic fallback.
 - Status and retry endpoints.
-- Integration fixtures and tests.
+- Updated provider fixtures.
 
 ## Exit checklist
 
-- [ ] One campaign can complete Qloo research.
-- [ ] One Apify run is started and persisted.
-- [ ] Dataset results are loaded only after success.
-- [ ] Workflow status survives process/page interruption.
-- [ ] Provider failures are classified and safely surfaced.
-- [ ] Duplicate requests do not create duplicate jobs.
-- [ ] Baseline and culture-informed search plans are distinguishable.
+- [ ] A run produces a persisted fingerprint.
+- [ ] A run produces normalized opportunities for the validated type.
+- [ ] Every stage is resumable.
+- [ ] Empty and partial provider results remain visible.
+- [ ] No Apify job is required for the core path.

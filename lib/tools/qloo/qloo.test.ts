@@ -117,7 +117,7 @@ test("Qloo includes resolved reference entities in the Insights signal", async (
   assert.equal(
     JSON.stringify(insightsBody?.["signal.interests.entities"]),
     JSON.stringify([
-      { entity: "C70CE2B8-0AD1-4150-BF18-5A6347F2E860", weight: 30 },
+      { id: "C70CE2B8-0AD1-4150-BF18-5A6347F2E860", weight: 30 },
     ])
   )
   assert.equal(insightsBody?.["operator.signal.interests.tags"], "intersection")
@@ -197,6 +197,62 @@ test("Qloo exposes documented comparison and heatmap request contracts", async (
   assert.match(requests[1] ?? "", /filter\.type=urn%3Aheatmap/)
   assert.match(requests[1] ?? "", /output\.heatmap\.boundary=city/)
   assert.match(requests[1] ?? "", /signal\.demographics\.gender=female/)
+})
+
+test("Qloo uses the tag filter query and omits tag operators without tags", async () => {
+  const requests: Array<{ input: string; body?: string }> = []
+  const client = createQlooClient({
+    baseUrl: "https://qloo.test",
+    searchUrl: "https://qloo.test/search",
+    insightsUrl: "https://qloo.test/v2/insights",
+    tagsUrl: "https://qloo.test/v2/tags",
+    apiKey: "test-key",
+    fetchImpl: async (input, init) => {
+      requests.push({ input, body: typeof init?.body === "string" ? init.body : undefined })
+      return new Response(JSON.stringify({ results: { tags: [] } }), { status: 200 })
+    },
+  })
+
+  await client.searchTags({ query: "streetwear", take: 5 })
+  await client.getInsights({
+    filterType: "urn:tag",
+    locationQuery: "India",
+    tagOperator: "intersection",
+    take: 10,
+  })
+
+  assert.match(requests[0]?.input ?? "", /filter\.query=streetwear/)
+  assert.doesNotMatch(
+    requests[1]?.body ?? "",
+    /operator\.signal\.interests\.tags/
+  )
+})
+
+test("Qloo serializes audience conditioning as a comma-separated signal", async () => {
+  let body: Record<string, unknown> | undefined
+  const client = createQlooClient({
+    baseUrl: "https://qloo.test",
+    searchUrl: "https://qloo.test/search",
+    insightsUrl: "https://qloo.test/v2/insights",
+    apiKey: "test-key",
+    fetchImpl: async (_input, init) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return new Response(JSON.stringify({ results: { tags: [] } }), { status: 200 })
+    },
+  })
+
+  await client.getInsights({
+    filterType: "urn:tag",
+    locationQuery: "India",
+    audienceIds: ["urn:audience:one", "urn:audience:two"],
+    audienceWeight: 25,
+    take: 10,
+  })
+
+  assert.equal(
+    body?.["signal.demographics.audiences"],
+    "urn:audience:one,urn:audience:two"
+  )
 })
 
 test("Qloo classifies rate limits, schema mismatches, and empty signals", async () => {

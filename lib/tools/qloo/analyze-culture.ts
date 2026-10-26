@@ -214,7 +214,7 @@ interface FingerprintLayerResult {
 interface LayerSpec {
   group: QlooFingerprintGroup
   label: string
-  entitySignals: Array<{ entity: string; weight: number }>
+  entitySignals: Array<{ id: string; weight: number }>
   tagSignals: Array<{ tag: string; weight: number }>
   operator?: "union" | "intersection"
   unresolvedInputs: string[]
@@ -235,7 +235,7 @@ async function loadFingerprintLayers(
   const entitySignalsFor = (entities: ResolvedEntity[], weight: number) =>
     entities.flatMap((entity) =>
       entity.status === "resolved" && entity.entityId
-        ? [{ entity: entity.entityId, weight }]
+        ? [{ id: entity.entityId, weight }]
         : []
     )
   const tagSignals = tags.flatMap((tag) =>
@@ -260,7 +260,6 @@ async function loadFingerprintLayers(
       label: "Brand in market",
       entitySignals: brand ? entitySignalsFor([brand], 30) : [],
       tagSignals: [],
-      operator: "union",
       unresolvedInputs: brand && brand.status !== "resolved" ? [brand.reference] : [],
     },
     {
@@ -276,7 +275,6 @@ async function loadFingerprintLayers(
       label: "References in market",
       entitySignals: entitySignalsFor(referenceEntities, 20),
       tagSignals: [],
-      operator: "union",
       unresolvedInputs: unresolved(
         referenceEntities.map((entity) => ({
           status: entity.status,
@@ -289,7 +287,7 @@ async function loadFingerprintLayers(
       label: "Combined campaign fingerprint",
       entitySignals: entitySignalsFor(references, 20).map((signal) => ({
         ...signal,
-        weight: signal.entity === brand?.entityId ? 30 : signal.weight,
+        weight: signal.id === brand?.entityId ? 30 : signal.weight,
       })),
       tagSignals,
       operator: "intersection",
@@ -307,12 +305,13 @@ async function loadFingerprintLayers(
 
   const results: FingerprintLayerResult[] = []
   for (const spec of specs) {
+    const operator = spec.tagSignals.length > 0 ? spec.operator : undefined
     const payload = await client.getInsights({
       filterType: "urn:tag",
       locationQuery,
       entitySignals: spec.entitySignals,
       tagSignals: spec.tagSignals,
-      ...(spec.operator ? { tagOperator: spec.operator } : {}),
+      ...(operator ? { tagOperator: operator } : {}),
       ...conditioningInput(brief),
       take: readTake(),
       explainability: true,
@@ -324,6 +323,7 @@ async function loadFingerprintLayers(
     ]
     results.push({
       ...spec,
+      operator,
       signals: dedupeSignals([
         ...inputSignals.map(signalToRecord),
         ...parsed.signals.map(signalToRecord),
@@ -353,7 +353,7 @@ function conditioningInput(brief: CampaignBrief) {
 function entityInputSignals(
   references: ResolvedEntity[],
   group: QlooFingerprintGroup,
-  inputs: Array<{ entity: string; weight: number }>
+  inputs: Array<{ id: string; weight: number }>
 ): CultureSignal[] {
   return references.flatMap((reference) => {
     if (
@@ -361,10 +361,10 @@ function entityInputSignals(
       !reference.entityId ||
       !reference.name ||
       !reference.evidence ||
-      !inputs.some((input) => input.entity === reference.entityId)
+      !inputs.some((input) => input.id === reference.entityId)
     )
       return []
-    const input = inputs.find((candidate) => candidate.entity === reference.entityId)
+    const input = inputs.find((candidate) => candidate.id === reference.entityId)
     return [
       {
         provider: "qloo" as const,

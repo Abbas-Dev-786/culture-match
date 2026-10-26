@@ -13,7 +13,7 @@ import {
 type JsonFetcher = (input: string, init?: RequestInit) => Promise<Response>
 
 export interface QlooWeightedEntity {
-  entity: string
+  id: string
   weight?: number
 }
 
@@ -108,7 +108,9 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
     },
     async searchTags(input) {
       const url = new URL(config.tagsUrl)
-      url.searchParams.set("query", input.query)
+      // Qloo's tag search route uses the Insights-style filter namespace.
+      // `query` is accepted by entity search but returns HTTP 400 here.
+      url.searchParams.set("filter.query", input.query)
       url.searchParams.set("take", String(input.take))
       return requestProviderJson(
         fetchImpl,
@@ -133,11 +135,11 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
         ...(input.tagSignals && input.tagSignals.length > 0
           ? { "signal.interests.tags": input.tagSignals }
           : {}),
-        ...(input.tagOperator
+        ...(input.tagOperator && input.tagSignals && input.tagSignals.length > 0
           ? { "operator.signal.interests.tags": input.tagOperator }
           : {}),
         ...(input.audienceIds && input.audienceIds.length > 0
-          ? { "signal.demographics.audiences": input.audienceIds }
+          ? { "signal.demographics.audiences": input.audienceIds.join(",") }
           : {}),
         ...(input.audienceWeight !== undefined
           ? { "signal.demographics.audiences.weight": input.audienceWeight }
@@ -362,7 +364,7 @@ async function requestProviderJson<T>(
     })
     const body = await readJson(response)
 
-    if (!response.ok) throw providerHttpError(provider, response.status)
+    if (!response.ok) throw providerHttpError(provider, response.status, body)
 
     const parsed = schema.safeParse(body)
     if (!parsed.success) {
@@ -385,7 +387,8 @@ async function requestProviderJson<T>(
 
 function providerHttpError(
   provider: "qloo" | "apify",
-  status: number
+  status: number,
+  body: unknown
 ): ProviderError {
   const mapping: Record<
     number,
@@ -407,8 +410,27 @@ function providerHttpError(
     code: mapped.code,
     status,
     retryable: mapped.retryable,
-    message: `${provider} returned HTTP ${status}`,
+    message: `${provider} returned HTTP ${status}${providerErrorDetail(body)}`,
   })
+}
+
+function providerErrorDetail(body: unknown): string {
+  if (!isRecord(body)) return ""
+  const errors = body.errors
+  if (Array.isArray(errors)) {
+    const messages = errors.flatMap((error) => {
+      if (!isRecord(error) || typeof error.message !== "string") return []
+      return [error.message.trim()]
+    })
+    if (messages.length > 0) return `: ${messages.slice(0, 3).join("; ")}`
+  }
+  return typeof body.message === "string" && body.message.trim()
+    ? `: ${body.message.trim()}`
+    : ""
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 async function readJson(response: Response): Promise<unknown> {

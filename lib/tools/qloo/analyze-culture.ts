@@ -56,19 +56,12 @@ export async function analyzeCulture(
   )
   const combinedLayer = layers.find((layer) => layer.group === "combined")
   const marketLayer = layers.find((layer) => layer.group === "market")
-  const primaryLayer = combinedLayer ?? marketLayer
-  const inputEntitySignals = layers
-    .filter((layer) => layer.group === "brand" || layer.group === "reference")
-    .flatMap((layer) =>
-      layer.signals.filter((signal) => signal.kind === "entity")
-    )
-  const returnedMarketSignals =
-    marketLayer?.signals.filter(
+  const primaryLayer = [combinedLayer, marketLayer].find((layer) =>
+    layer?.signals.some(
       (signal) => signal.evidence.fieldPath === "$.results.tags[]"
-    ) ?? []
-  const signalRecords = dedupeSignals(
-    [...inputEntitySignals, ...returnedMarketSignals]
+    )
   )
+  const signalRecords = primaryLayer ? dedupeSignals(primaryLayer.signals) : []
   const signals = signalRecords.map(recordToCultureSignal)
 
   if (
@@ -737,26 +730,10 @@ function createFingerprint(
       .filter((tag) => tag.status !== "resolved")
       .map((tag) => tag.query),
   ]
-  const tagInputSignals = tags.flatMap((tag) => {
-    if (tag.status !== "resolved" || !tag.tagId || !tag.name || !tag.evidence)
-      return []
-    return [
-      {
-        signalId: tag.tagId,
-        kind: "tag" as const,
-        name: tag.name,
-        types: tag.types ?? [],
-        inputWeight: 15,
-        sourceGroup: "product" as const,
-        evidence: tag.evidence,
-      },
-    ]
-  })
-
   return {
     locationQuery,
     location,
-    signals: [...signals.map(signalToRecord), ...tagInputSignals],
+    signals: signals.map(signalToRecord),
     layers: layers.map((layer) => ({
       group: layer.group,
       label: layer.label,

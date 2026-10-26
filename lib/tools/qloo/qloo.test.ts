@@ -71,9 +71,10 @@ test("Qloo resolves exact references and normalizes location signals", async () 
 
   const result = await analyzeCulture(brief, client, "2026-10-23T00:00:00.000Z")
   assert.equal(result.location.name, "India")
-  assert.equal(result.signals.length, 11)
-  assert.equal(result.signals[1]?.name, "Hindi Cinema")
-  assert.equal(result.signals[1]?.evidence.verification, "provider_reported")
+  assert.equal(result.signals.length, 12)
+  assert.equal(result.signals[1]?.name, "Streetwear")
+  assert.equal(result.signals[2]?.name, "Hindi Cinema")
+  assert.equal(result.signals[2]?.evidence.verification, "provider_reported")
   assert.deepEqual(
     result.fingerprint.layers.map((layer) => layer.group),
     ["market", "brand", "product", "reference", "combined"]

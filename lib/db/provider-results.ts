@@ -190,6 +190,14 @@ function creatorToJson(creator: NormalizedCreator): JsonObject {
     ...(creator.isVerified !== undefined
       ? { isVerified: creator.isVerified }
       : {}),
+    ...(creator.monthlyGrowthRate !== undefined ? { monthlyGrowthRate: creator.monthlyGrowthRate } : {}),
+    ...(creator.postingFrequency !== undefined ? { postingFrequency: creator.postingFrequency } : {}),
+    ...(creator.estimatedFee !== undefined ? { estimatedFee: creator.estimatedFee } : {}),
+    ...(creator.languages ? { languages: creator.languages } : {}),
+    ...(creator.audienceRegions ? { audienceRegions: creator.audienceRegions } : {}),
+    ...(creator.qlooEntityId ? { qlooEntityId: creator.qlooEntityId } : {}),
+    ...(creator.qlooAffinity !== undefined ? { qlooAffinity: creator.qlooAffinity } : {}),
+    ...(creator.qlooPopularity !== undefined ? { qlooPopularity: creator.qlooPopularity } : {}),
     locationUnverified: creator.locationUnverified ?? true,
     missingFields: creator.missingFields,
     sourceFields: creator.sourceFields,

@@ -110,3 +110,37 @@ test("creator candidate uniqueness migration removes the legacy three-column con
     assert.match(migration, /creator_candidates_run_provider_variant_key/)
   }
 })
+
+test("PRD campaign migration stores description, budget range, and exact age conditioning", async () => {
+  const migrationPath = new URL("./migrations/0007_prd_campaign_fields.sql", import.meta.url)
+  const canonicalMigrationPath = new URL(
+    "../../supabase/migrations/20261026140000_prd_campaign_fields.sql",
+    import.meta.url
+  )
+  const [sql, canonicalSql] = await Promise.all([
+    readFile(migrationPath, "utf8"),
+    readFile(canonicalMigrationPath, "utf8"),
+  ])
+  for (const migration of [sql, canonicalSql]) {
+    assert.match(migration, /product_description text not null/)
+    assert.match(migration, /min_budget numeric\(14,2\)/)
+    assert.match(migration, /min_budget <= max_budget/)
+    assert.match(migration, /'25_to_34'/)
+  }
+})
+
+test("saved campaign migration adds an indexed owner-scoped preference", async () => {
+  const migrationPath = new URL("./migrations/0008_saved_campaigns.sql", import.meta.url)
+  const canonicalMigrationPath = new URL(
+    "../../supabase/migrations/20261026150000_saved_campaigns.sql",
+    import.meta.url
+  )
+  const [sql, canonicalSql] = await Promise.all([
+    readFile(migrationPath, "utf8"),
+    readFile(canonicalMigrationPath, "utf8"),
+  ])
+  for (const migration of [sql, canonicalSql]) {
+    assert.match(migration, /is_saved boolean not null default false/)
+    assert.match(migration, /campaigns_user_saved_updated_idx/)
+  }
+})

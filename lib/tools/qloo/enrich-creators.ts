@@ -1,22 +1,41 @@
 import type {
+  CultureSignal,
   NormalizedCreator,
+  QlooAgeRange,
+  QlooGender,
   QlooSignalRecord,
 } from "../../domain/types.ts"
 import type { QlooClient } from "./client.ts"
 import { resolveTags } from "./resolve-tags.ts"
 
+export interface QlooCreatorConditioning {
+  audienceIds?: string[]
+  audienceWeight?: number
+  ageRange?: QlooAgeRange
+  gender?: QlooGender
+}
+
 export async function enrichCreatorsWithQloo(
   creators: NormalizedCreator[],
   locationQuery: string,
-  client: QlooClient
+  client: QlooClient,
+  campaignSignals: CultureSignal[] = [],
+  conditioning: QlooCreatorConditioning = {}
 ): Promise<NormalizedCreator[]> {
   const limit = readCreatorLimit()
   const enriched = new Map<string, NormalizedCreator>()
   const cache = new Map<string, QlooSignalRecord[]>()
+  const personMatches = await discoverPersonMatches(
+    creators.slice(0, limit),
+    locationQuery,
+    campaignSignals,
+    conditioning,
+    client
+  )
 
   for (const [index, creator] of creators.entries()) {
     if (index >= limit || creator.contentSignals.length === 0) {
-      enriched.set(creator.providerCreatorId, creator)
+      enriched.set(creator.providerCreatorId, applyPersonMatch(creator, personMatches))
       continue
     }
 
@@ -25,10 +44,7 @@ export async function enrichCreatorsWithQloo(
       .join("|")
     const cached = cache.get(cacheKey)
     if (cached) {
-      enriched.set(creator.providerCreatorId, {
-        ...creator,
-        qlooSignals: cached,
-      })
+      enriched.set(creator.providerCreatorId, applyPersonMatch({ ...creator, qlooSignals: cached }, personMatches))
       continue
     }
 
@@ -52,7 +68,7 @@ export async function enrichCreatorsWithQloo(
       )
       if (resolvedTags.length === 0) {
         cache.set(cacheKey, [])
-        enriched.set(creator.providerCreatorId, creator)
+        enriched.set(creator.providerCreatorId, applyPersonMatch(creator, personMatches))
         continue
       }
 
@@ -82,16 +98,127 @@ export async function enrichCreatorsWithQloo(
         },
       }))
       cache.set(cacheKey, qlooSignals)
-      enriched.set(creator.providerCreatorId, {
+      enriched.set(creator.providerCreatorId, applyPersonMatch({
         ...creator,
         qlooSignals,
-      })
+      }, personMatches))
     } catch {
       enriched.set(creator.providerCreatorId, creator)
     }
   }
 
   return creators.map((creator) => enriched.get(creator.providerCreatorId) ?? creator)
+}
+
+interface QlooPersonMatch {
+  name: string
+  entityId: string
+  affinity?: number
+  popularity?: number
+  signals: QlooSignalRecord[]
+}
+
+async function discoverPersonMatches(
+  creators: NormalizedCreator[],
+  locationQuery: string,
+  campaignSignals: CultureSignal[],
+  conditioning: QlooCreatorConditioning,
+  client: QlooClient
+): Promise<Map<string, QlooPersonMatch>> {
+  const matches = new Map<string, QlooPersonMatch>()
+  try {
+    const payload = await client.getInsights({
+      filterType: "urn:entity:person",
+      filterTags: ["urn:tag:genre:person:influencer"],
+      locationQuery,
+      tagSignals: campaignSignals
+        .filter((signal) => signal.kind === "tag" || signal.signalId.startsWith("urn:tag:"))
+        .slice(0, 10)
+        .map((signal) => ({ tag: signal.signalId, weight: signal.inputWeight ?? 10 })),
+      ...conditioning,
+      take: Math.min(50, Math.max(20, creators.length * 2)),
+      explainability: true,
+    })
+    for (const person of readPersonMatches(payload)) {
+      const keys = [person.name, ...creators.flatMap((creator) => creator.name === person.name ? [creator.providerCreatorId] : [])]
+      for (const key of keys) matches.set(normalizePersonName(key), person)
+    }
+  } catch {
+    return matches
+  }
+  return matches
+}
+
+function applyPersonMatch(
+  creator: NormalizedCreator,
+  matches: Map<string, QlooPersonMatch>
+): NormalizedCreator {
+  const match = matches.get(normalizePersonName(creator.name))
+  if (!match) return creator
+  return {
+    ...creator,
+    qlooEntityId: match.entityId,
+    ...(match.affinity !== undefined ? { qlooAffinity: match.affinity } : {}),
+    ...(match.popularity !== undefined ? { qlooPopularity: match.popularity } : {}),
+    ...(match.signals.length > 0 ? { qlooSignals: [...(creator.qlooSignals ?? []), ...match.signals] } : {}),
+    evidence: [
+      ...creator.evidence,
+      {
+        source: "qloo",
+        fieldPath: "$.results.entities[]",
+        providerEntityId: match.entityId,
+        observedAt: new Date().toISOString(),
+        verification: "provider_reported",
+        excerpt: `${match.name} person-level Qloo validation`,
+      },
+    ],
+  }
+}
+
+function readPersonMatches(payload: unknown): QlooPersonMatch[] {
+  if (!isRecord(payload) || !isRecord(payload.results)) return []
+  const values = Array.isArray(payload.results.entities) ? payload.results.entities : []
+  return values.flatMap((value) => {
+    if (!isRecord(value)) return []
+    const entityId = readString(value.entity_id) ?? readString(value.id)
+    const name = readString(value.name)
+    if (!entityId || !name) return []
+    const query = isRecord(value.query) ? value.query : value
+    const affinity = readNumber(value.affinity) ?? readNumber(query.affinity)
+    const popularity = readNumber(value.popularity) ?? readNumber(query.popularity)
+    const signals = Array.isArray(value.tags) ? value.tags.flatMap((tag) => {
+      if (!isRecord(tag)) return []
+      const signalId = readString(tag.id) ?? readString(tag.tag_id)
+      const signalName = readString(tag.name)
+      if (!signalId || !signalName) return []
+      return [{
+        signalId,
+        kind: "tag" as const,
+        name: signalName,
+        types: [],
+        sourceGroup: "creator" as const,
+        evidence: {
+          source: "qloo" as const,
+          fieldPath: "$.results.entities[].tags[]",
+          providerEntityId: entityId,
+          observedAt: new Date().toISOString(),
+          verification: "provider_reported" as const,
+          excerpt: signalName,
+        },
+      }]
+    }) : []
+    return [{
+      entityId,
+      name,
+      ...(affinity !== undefined ? { affinity } : {}),
+      ...(popularity !== undefined ? { popularity } : {}),
+      signals,
+    }]
+  })
+}
+
+function normalizePersonName(value: string): string {
+  return value.trim().toLocaleLowerCase().replaceAll(/[^\p{L}\p{N}]+/gu, " ")
 }
 
 function readTagAffinities(payload: unknown): Map<string, number> {
@@ -132,4 +259,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }

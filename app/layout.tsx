@@ -3,6 +3,7 @@ import { Geist_Mono, DM_Sans, Outfit } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { cn } from "@/lib/utils";
+import { SessionRefresh } from "@/app/auth/session-refresh"
 
 const outfitHeading = Outfit({ subsets: ['latin'], variable: '--font-heading' });
 
@@ -25,7 +26,10 @@ export default function RootLayout({
       className={cn("antialiased", fontMono.variable, "font-sans", dmSans.variable, outfitHeading.variable)}
     >
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <SessionRefresh />
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   )

@@ -22,7 +22,8 @@ export async function GET(
     const results = await getSafeResults(
       campaign.client,
       campaign.userId,
-      latest.run.id
+      latest.run.id,
+      campaign.campaign
     )
     const csv = campaignResultsToCsv(results.matches)
 

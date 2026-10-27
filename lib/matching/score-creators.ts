@@ -10,16 +10,18 @@ import {
   evidenceCompleteness,
   userInputEvidence,
 } from "./evidence.ts"
+import { creatorTier, creatorTierBudgetRange } from "./creator-tier.ts"
 
-export const SCORE_ALGORITHM_VERSION = "phase3-v1"
+export const SCORE_ALGORITHM_VERSION = "prd-v1"
 const DEFAULT_SCORE_OBSERVED_AT = "1970-01-01T00:00:00.000Z"
 
 export const scoreWeights = {
-  culturalAlignment: 0.35,
-  contentFit: 0.3,
-  marketRelevance: 0.15,
-  engagement: 0.1,
-  reachBudgetFit: 0.1,
+  culturalAffinity: 0.35,
+  engagementRate: 0.25,
+  semanticRelevance: 0.2,
+  growthMomentum: 0.1,
+  postingConsistency: 0.05,
+  budgetTierFit: 0.05,
 } as const
 
 export interface ScoredCreator {
@@ -40,12 +42,10 @@ export function scoreCreators(
   signals: CultureSignal[],
   creators: NormalizedCreator[],
   observedAt = deterministicObservedAt(creators),
-  options: ScoreOptions = {}
+  options: ScoreOptions = {},
 ): ScoredCreator[] {
   return creators
-    .map((creator) =>
-      scoreCreator(brief, signals, creator, observedAt, options)
-    )
+    .map((creator) => scoreCreator(brief, signals, creator, observedAt, options))
     .sort((left, right) => compareScores(left.campaignFitScore, right.campaignFitScore))
 }
 
@@ -54,45 +54,36 @@ export function scoreCreator(
   signals: CultureSignal[],
   creator: NormalizedCreator,
   observedAt = DEFAULT_SCORE_OBSERVED_AT,
-  options: ScoreOptions = {}
+  options: ScoreOptions = {},
 ): ScoredCreator {
   const components = [
-    culturalComponent(
-      signals,
-      creator,
-      observedAt,
-      options.includeQlooResonance !== false
-    ),
-    contentComponent(brief, creator, observedAt),
-    marketComponent(creator),
-    engagementComponent(creator),
-    reachBudgetComponent(brief, creator, observedAt),
+    culturalAffinityComponent(signals, creator, observedAt, options.includeQlooResonance !== false),
+    engagementRateComponent(creator),
+    semanticRelevanceComponent(creator),
+    growthMomentumComponent(creator),
+    postingConsistencyComponent(creator),
+    budgetTierFitComponent(brief, creator, observedAt),
   ]
-  const available = components.filter(
-    (component) => component.score !== undefined
-  )
+  const available = components.filter((component) => component.score !== undefined)
   const weightTotal = available.reduce((sum, component) => sum + component.weight, 0)
-  const weightedScore =
-    weightTotal > 0
-      ? available.reduce(
-          (sum, component) => sum + (component.score ?? 0) * component.weight,
-          0
-        ) / weightTotal
-      : undefined
+  const weightedScore = weightTotal > 0
+    ? available.reduce((sum, component) => sum + (component.score ?? 0) * component.weight, 0) / weightTotal
+    : undefined
   const evidence = uniqueEvidence(components.flatMap((component) => component.evidence))
   const caveats = [...creator.missingFields.map((field) => `Missing ${field} data`)]
-  if (components[2]?.score === undefined)
-    caveats.push("Audience geography is unavailable; creator location is not audience evidence")
-  if (brief.maxBudget !== undefined)
-    caveats.push("Creator fee data is unavailable, so budget fit is not scored")
+  if (brief.maxBudget !== undefined && creator.estimatedFee === undefined) {
+    caveats.push("Creator fee data is unavailable unless reported by the provider")
+  }
+  if (creator.locationUnverified !== false) {
+    caveats.push("Audience geography is not verified; creator location is not audience evidence")
+  }
 
   return {
     creator,
-    campaignFitScore:
-      weightedScore === undefined ? null : roundScore(weightedScore),
+    campaignFitScore: weightedScore === undefined ? null : roundScore(weightedScore),
     evidenceCompleteness: evidenceCompleteness(
       available.reduce((sum, component) => sum + component.weight, 0),
-      totalWeight()
+      totalWeight(),
     ),
     components,
     evidence,
@@ -100,207 +91,229 @@ export function scoreCreator(
   }
 }
 
-function culturalComponent(
+function culturalAffinityComponent(
   signals: CultureSignal[],
   creator: NormalizedCreator,
   observedAt: string,
-  includeQlooResonance: boolean
+  includeQlooResonance: boolean,
 ): ScoreComponent {
   if (!includeQlooResonance) {
     return unavailableComponent(
-      "culturalAlignment",
-      "Qloo cultural resonance",
-      scoreWeights.culturalAlignment,
-      "Qloo resonance is excluded for the baseline or ablation comparison"
+      "culturalAffinity",
+      "Cultural affinity",
+      scoreWeights.culturalAffinity,
+      "Qloo cultural affinity is excluded from the baseline comparison",
     )
   }
 
-  const qlooSignals = (creator.qlooSignals ?? []).filter(
-    (signal) => signal.affinity !== undefined
-  )
+  const qlooSignals = (creator.qlooSignals ?? []).filter((signal) => signal.affinity !== undefined)
+  if (creator.qlooAffinity !== undefined) {
+    return {
+      key: "culturalAffinity",
+      label: "Cultural affinity",
+      score: roundScore(normalizeAffinity(creator.qlooAffinity)),
+      weight: scoreWeights.culturalAffinity,
+      availability: "supported",
+      rationale: "Qloo person-level affinity for the influencer against the campaign cultural signals.",
+      evidence: [
+        ...creator.evidence.filter((item) => item.fieldPath === "$.results.entities[]"),
+        derivedEvidence(
+          "Qloo person-level cultural affinity",
+          "$.derived.qlooAffinity",
+          observedAt,
+          `Validated Qloo entity ${creator.qlooEntityId ?? "without an entity id"}`,
+        ),
+      ],
+    }
+  }
   if (signals.length === 0 || qlooSignals.length === 0) {
     return unavailableComponent(
-      "culturalAlignment",
-      "Qloo cultural resonance",
-      scoreWeights.culturalAlignment,
-      "Qloo did not resolve creator content signals with a location-conditioned affinity"
+      "culturalAffinity",
+      "Cultural affinity",
+      scoreWeights.culturalAffinity,
+      "Qloo did not resolve creator-content signals with a location-conditioned affinity",
     )
   }
 
-  const totalWeight = qlooSignals.reduce(
-    (sum, signal) => sum + (signal.inputWeight ?? 1),
-    0
-  )
+  const totalSignalWeight = qlooSignals.reduce((sum, signal) => sum + (signal.inputWeight ?? 1), 0)
   const weightedAffinity = qlooSignals.reduce(
-    (sum, signal) =>
-      sum + normalizeAffinity(signal.affinity ?? 0) * (signal.inputWeight ?? 1),
-    0
+    (sum, signal) => sum + normalizeAffinity(signal.affinity ?? 0) * (signal.inputWeight ?? 1),
+    0,
   )
-  const score = totalWeight > 0 ? weightedAffinity / totalWeight : 0
   const marketEvidence = signals
-    .filter((signal) =>
-      qlooSignals.some((creatorSignal) => creatorSignal.signalId === signal.signalId)
-    )
+    .filter((signal) => qlooSignals.some((creatorSignal) => creatorSignal.signalId === signal.signalId))
     .map((signal) => signal.evidence)
-  const evidence = [
-    ...marketEvidence,
-    ...qlooSignals.map((signal) => signal.evidence),
-    ...creator.contentSignals.map((signal) => signal.evidence),
-    derivedEvidence(
-      "Qloo content-to-market resonance",
-      "$.derived.culturalAlignment",
-      observedAt,
-      `Weighted ${qlooSignals.length} creator signals against the target market`
-    ),
-  ]
-  return {
-    key: "culturalAlignment",
-    label: "Qloo cultural resonance",
-    score: roundScore(score),
-    weight: scoreWeights.culturalAlignment,
-    availability: "conditional",
-    rationale:
-      "Location-conditioned Qloo affinity for resolved creator-content signals; this is not audience-level affinity.",
-    evidence,
-  }
-}
 
-function contentComponent(
-  brief: CampaignBrief,
-  creator: NormalizedCreator,
-  observedAt: string
-): ScoreComponent {
-  const creatorText = [
-    creator.bio,
-    ...creator.contentSignals.map((signal) => signal.text),
-  ]
-    .filter((value): value is string => Boolean(value))
-    .join(" ")
-  if (!creatorText) {
-    return unavailableComponent(
-      "contentFit",
-      "Content and campaign fit",
-      scoreWeights.contentFit,
-      "Creator bio/content text is unavailable"
-    )
-  }
-  const targetText = `${brief.productCategory} ${brief.objective}`
-  const score = lexicalSimilarity(targetText, creatorText) * 100
   return {
-    key: "contentFit",
-    label: "Content and campaign fit",
-    score: roundScore(score),
-    weight: scoreWeights.contentFit,
+    key: "culturalAffinity",
+    label: "Cultural affinity",
+    score: roundScore(totalSignalWeight > 0 ? weightedAffinity / totalSignalWeight : 0),
+    weight: scoreWeights.culturalAffinity,
     availability: "conditional",
-    rationale: "Derived lexical similarity between the campaign brief and the returned creator bio.",
+    rationale: "Location-conditioned Qloo affinity for resolved creator-content signals; this is not audience-level affinity.",
     evidence: [
+      ...marketEvidence,
+      ...qlooSignals.map((signal) => signal.evidence),
       ...creator.contentSignals.map((signal) => signal.evidence),
       derivedEvidence(
-        "Lexical campaign fit",
-        "$.derived.contentFit",
+        "Qloo content-to-market resonance",
+        "$.derived.culturalAffinity",
         observedAt,
-        `${brief.productCategory} / ${brief.objective}`
+        `Weighted ${qlooSignals.length} creator signals against the target market`,
       ),
     ],
   }
 }
 
-function marketComponent(creator: NormalizedCreator): ScoreComponent {
-  return unavailableComponent(
-    "marketRelevance",
-    "Market relevance",
-    scoreWeights.marketRelevance,
-    creator.locationUnverified === false
-      ? "The provider did not return audience geography"
-      : "Audience geography is not returned by the provider"
-  )
-}
-
-function engagementComponent(creator: NormalizedCreator): ScoreComponent {
-  if (
-    creator.engagementRate === undefined ||
-    creator.engagementRate < 0 ||
-    creator.engagementRate > 1
-  ) {
+function engagementRateComponent(creator: NormalizedCreator): ScoreComponent {
+  if (creator.engagementRate === undefined || creator.engagementRate < 0 || creator.engagementRate > 1) {
     return unavailableComponent(
-      "engagement",
-      "Engagement quality",
-      scoreWeights.engagement,
-      "A valid provider engagement rate is unavailable"
+      "engagementRate",
+      "Engagement rate",
+      scoreWeights.engagementRate,
+      "A valid provider engagement rate is unavailable",
     )
   }
   return {
-    key: "engagement",
-    label: "Engagement quality",
+    key: "engagementRate",
+    label: "Engagement rate",
     score: roundScore(Math.min(creator.engagementRate / 0.1, 1) * 100),
-    weight: scoreWeights.engagement,
+    weight: scoreWeights.engagementRate,
     availability: "supported",
     rationale: "Provider-reported engagement rate normalized against a 10% reference ceiling.",
-    evidence: creator.evidence.filter(
-      (item) => item.fieldPath === "$.primary_profile.engagement_rate"
-    ),
+    evidence: creator.evidence.filter((item) => item.fieldPath === "$.primary_profile.engagement_rate"),
   }
 }
 
-function reachBudgetComponent(
-  brief: CampaignBrief,
-  creator: NormalizedCreator,
-  observedAt: string
-): ScoreComponent {
-  if (creator.followers === undefined || (brief.minFollowers === undefined && brief.maxFollowers === undefined)) {
+function semanticRelevanceComponent(creator: NormalizedCreator): ScoreComponent {
+  if (creator.providerMatchScore === undefined) {
     return unavailableComponent(
-      "reachBudgetFit",
-      "Reach and budget fit",
-      scoreWeights.reachBudgetFit,
-      "Follower count or campaign reach bounds are unavailable"
+      "semanticRelevance",
+      "Semantic relevance",
+      scoreWeights.semanticRelevance,
+      "The creator-search provider did not return a semantic relevance score",
     )
   }
-  const min = brief.minFollowers ?? 0
-  const max = brief.maxFollowers ?? Math.max(min, creator.followers)
-  const score = creator.followers < min
-    ? Math.max(0, (creator.followers / Math.max(min, 1)) * 100)
-    : creator.followers > max
-      ? Math.max(0, (max / creator.followers) * 100)
-      : 100
-  const evidence = [
-    ...creator.evidence.filter((item) => item.fieldPath === "$.primary_profile.followers"),
-    userInputEvidence("Campaign follower bounds", "$.brief.followerBounds", observedAt),
-  ]
   return {
-    key: "reachBudgetFit",
-    label: "Reach and budget fit",
-    score: roundScore(score),
-    weight: scoreWeights.reachBudgetFit,
-    availability: "conditional",
-    rationale: brief.maxBudget !== undefined
-      ? "Reach fit is scored from provider followers; fee-based budget fit remains unavailable."
-      : "Reach fit is scored against the campaign follower bounds.",
-    evidence,
+    key: "semanticRelevance",
+    label: "Semantic relevance",
+    score: roundScore(normalizeUnitScore(creator.providerMatchScore)),
+    weight: scoreWeights.semanticRelevance,
+    availability: "supported",
+    rationale: "Provider-reported relevance for the natural-language creator search.",
+    evidence: creator.evidence.filter((item) => item.fieldPath === "$.match.score"),
   }
+}
+
+function growthMomentumComponent(creator: NormalizedCreator): ScoreComponent {
+  if (creator.monthlyGrowthRate === undefined) {
+    return unavailableComponent(
+      "growthMomentum",
+      "Growth momentum",
+      scoreWeights.growthMomentum,
+      "Monthly growth was not returned by the provider",
+    )
+  }
+  return {
+    key: "growthMomentum",
+    label: "Growth momentum",
+    score: roundScore(normalizeRateScore(creator.monthlyGrowthRate, 0.2)),
+    weight: scoreWeights.growthMomentum,
+    availability: "supported",
+    rationale: "Monthly growth normalized against a 20% reference ceiling.",
+    evidence: creator.evidence.filter((item) => item.fieldPath.includes("growth")),
+  }
+}
+
+function postingConsistencyComponent(creator: NormalizedCreator): ScoreComponent {
+  if (creator.postingFrequency === undefined) {
+    return unavailableComponent(
+      "postingConsistency",
+      "Posting consistency",
+      scoreWeights.postingConsistency,
+      "Posting frequency was not returned by the provider",
+    )
+  }
+  return {
+    key: "postingConsistency",
+    label: "Posting consistency",
+    score: roundScore(Math.min(creator.postingFrequency / 12, 1) * 100),
+    weight: scoreWeights.postingConsistency,
+    availability: "supported",
+    rationale: "Monthly posting frequency normalized against a 12-post reference ceiling.",
+    evidence: creator.evidence.filter((item) => item.fieldPath.includes("posting")),
+  }
+}
+
+function budgetTierFitComponent(
+  brief: CampaignBrief,
+  creator: NormalizedCreator,
+  observedAt: string,
+): ScoreComponent {
+  if (brief.maxBudget === undefined && brief.minBudget === undefined) {
+    return unavailableComponent(
+      "budgetTierFit",
+      "Budget tier fit",
+      scoreWeights.budgetTierFit,
+      "A provider-reported creator fee and campaign budget are required",
+    )
+  }
+  if (creator.estimatedFee === undefined && !creatorTierBudgetRange(creatorTier(creator.followers))) {
+    return unavailableComponent(
+      "budgetTierFit",
+      "Budget tier fit",
+      scoreWeights.budgetTierFit,
+      "Follower count is required to estimate the PRD budget tier when creator fee data is unavailable",
+    )
+  }
+  const minimum = brief.minBudget ?? 0
+  const maximum = brief.maxBudget ?? Number.POSITIVE_INFINITY
+  const score = creator.estimatedFee !== undefined
+    ? creator.estimatedFee < minimum
+      ? (creator.estimatedFee / Math.max(minimum, 1)) * 100
+      : creator.estimatedFee <= maximum
+        ? 100
+        : Number.isFinite(maximum) ? (maximum / creator.estimatedFee) * 100 : 100
+    : tierBudgetScore(creator.followers, minimum, maximum)
+  return {
+    key: "budgetTierFit",
+    label: "Budget tier fit",
+    score: roundScore(score),
+    weight: scoreWeights.budgetTierFit,
+    availability: "conditional",
+    rationale: creator.estimatedFee !== undefined
+      ? "Provider-reported creator fee compared with the campaign budget range."
+      : `Follower-based ${creatorTier(creator.followers)} tier compared with the campaign budget matrix; creator fee is unavailable.`,
+    evidence: [
+      ...creator.evidence.filter((item) => item.fieldPath.includes("fee")),
+      userInputEvidence("Campaign budget", "$.brief.budget", observedAt),
+    ],
+  }
+}
+
+function tierBudgetScore(
+  followers: number | undefined,
+  minimum: number,
+  maximum: number,
+): number {
+  const range = creatorTierBudgetRange(creatorTier(followers))
+  if (!range) return 0
+  const tierMaximum = range.max ?? Number.POSITIVE_INFINITY
+  const overlapMinimum = Math.max(minimum, range.min)
+  const overlapMaximum = Math.min(maximum, tierMaximum)
+  if (overlapMinimum <= overlapMaximum) return 100
+  if (maximum < range.min) return Math.max(0, (maximum / Math.max(range.min, 1)) * 100)
+  if (minimum > tierMaximum) return Number.isFinite(tierMaximum) ? Math.max(0, (tierMaximum / minimum) * 100) : 0
+  return 0
 }
 
 function unavailableComponent(
   key: string,
   label: string,
   weight: number,
-  rationale: string
+  rationale: string,
 ): ScoreComponent {
   return { key, label, weight, availability: "unavailable", rationale, evidence: [] }
-}
-
-function lexicalSimilarity(left: string, right: string): number {
-  const leftTokens = new Set(tokens(left))
-  const rightTokens = new Set(tokens(right))
-  if (leftTokens.size === 0 || rightTokens.size === 0) return 0
-  const overlap = [...leftTokens].filter((token) => rightTokens.has(token)).length
-  return overlap / Math.max(leftTokens.size, rightTokens.size)
-}
-
-function tokens(value: string): string[] {
-  return value
-    .toLowerCase()
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter((token) => token.length > 2)
 }
 
 function totalWeight(): number {
@@ -331,6 +344,15 @@ function roundScore(value: number): number {
 function normalizeAffinity(value: number): number {
   if (!Number.isFinite(value)) return 0
   return value <= 1 ? value * 100 : Math.min(value, 100)
+}
+
+function normalizeUnitScore(value: number): number {
+  return value <= 1 ? value * 100 : value
+}
+
+function normalizeRateScore(value: number, ceiling: number): number {
+  const rate = value > 1 ? value / 100 : value
+  return Math.min(Math.max(rate / ceiling, 0), 1) * 100
 }
 
 function deterministicObservedAt(creators: NormalizedCreator[]): string {

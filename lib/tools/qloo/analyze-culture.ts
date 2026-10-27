@@ -41,7 +41,7 @@ export async function analyzeCulture(
     observedAt
   )
   const resolvedTags = await resolveTagsWithFallback(
-    [brief.productCategory],
+    [brief.productCategory, brief.productDescription, ...brief.culturalReferences].filter((value) => value.trim()),
     client,
     observedAt
   )
@@ -56,11 +56,33 @@ export async function analyzeCulture(
   )
   const combinedLayer = layers.find((layer) => layer.group === "combined")
   const marketLayer = layers.find((layer) => layer.group === "market")
-  const primaryLayer = [combinedLayer, marketLayer].find((layer) =>
+  let primaryLayer = [combinedLayer, marketLayer].find((layer) =>
     layer?.signals.some(
       (signal) => signal.evidence.fieldPath === "$.results.tags[]"
     )
   )
+  if (!primaryLayer) {
+    const fallbackPayload = await client.getInsights({
+      filterType: "urn:tag",
+      locationQuery,
+      popularityMin: 0.9,
+      take: readTake(),
+      explainability: true,
+    })
+    const fallbackParsed = parseTasteResponse(fallbackPayload, observedAt, "market")
+    const fallbackLayer: FingerprintLayerResult = {
+      group: "market",
+      label: "Popular market fallback",
+      signals: fallbackParsed.signals.map(signalToRecord),
+      unresolvedInputs: [],
+      location: fallbackParsed.location,
+      payload: isJsonObject(fallbackPayload) ? fallbackPayload : {},
+      entitySignalCount: 0,
+      tagSignalCount: 0,
+    }
+    layers.push(fallbackLayer)
+    primaryLayer = fallbackLayer
+  }
   const signalRecords = primaryLayer ? dedupeSignals(primaryLayer.signals) : []
   const signals = signalRecords.map(recordToCultureSignal)
 
@@ -152,6 +174,7 @@ export async function analyzeCulture(
       comparison: comparison ? comparisonToJson(comparison) : null,
       heatmap: heatmap ? heatmapToJson(heatmap) : null,
       fingerprint: fingerprintToJson(fingerprint),
+      fallbackUsed: primaryLayer.label === "Popular market fallback",
       insightRequest: {
         filterType: "urn:tag",
         locationQuery,

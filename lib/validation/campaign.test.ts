@@ -5,6 +5,7 @@ import { campaignBriefSchema, createCampaignRequestSchema } from "./campaign.ts"
 const validBrief = {
   brandName: "Northstar",
   productCategory: "streetwear",
+  productDescription: "Urban streetwear",
   targetMarket: { country: "India", marketScope: "country" },
   objective: "Launch a regional collection",
   culturalReferences: ["Nike"],

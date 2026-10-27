@@ -24,6 +24,30 @@ export function normalizeStoredCreator(
     ...(row.engagement_rate !== null
       ? { engagementRate: row.engagement_rate }
       : {}),
+    ...(readNonNegativeNumber(payload.monthlyGrowthRate) !== undefined
+      ? { monthlyGrowthRate: readNonNegativeNumber(payload.monthlyGrowthRate) }
+      : {}),
+    ...(readNonNegativeNumber(payload.postingFrequency) !== undefined
+      ? { postingFrequency: readNonNegativeNumber(payload.postingFrequency) }
+      : {}),
+    ...(readNonNegativeNumber(payload.estimatedFee) !== undefined
+      ? { estimatedFee: readNonNegativeNumber(payload.estimatedFee) }
+      : {}),
+    ...(readStringArray(payload.languages).length > 0
+      ? { languages: readStringArray(payload.languages) }
+      : {}),
+    ...(readStringArray(payload.audienceRegions).length > 0
+      ? { audienceRegions: readStringArray(payload.audienceRegions) }
+      : {}),
+    ...(typeof payload.qlooEntityId === "string"
+      ? { qlooEntityId: payload.qlooEntityId }
+      : {}),
+    ...(readUnitNumber(payload.qlooAffinity) !== undefined
+      ? { qlooAffinity: readUnitNumber(payload.qlooAffinity) }
+      : {}),
+    ...(readUnitNumber(payload.qlooPopularity) !== undefined
+      ? { qlooPopularity: readUnitNumber(payload.qlooPopularity) }
+      : {}),
     ...(row.is_verified !== null ? { isVerified: row.is_verified } : {}),
     ...(row.location_unverified !== null
       ? { locationUnverified: row.location_unverified }
@@ -161,6 +185,18 @@ function readStringArray(value: Json | undefined): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : []
+}
+
+function readNonNegativeNumber(value: Json | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined
+}
+
+function readUnitNumber(value: Json | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1
+    ? value
+    : undefined
 }
 
 function isEvidenceSource(

@@ -11,6 +11,7 @@ CultureMatch helps marketers compare a normal creator search with a culture-info
 5. Normalize creators and calculate deterministic campaign-fit scores.
 6. Compare shortlist overlap and rank changes.
 7. Optionally generate evidence-grounded creator concepts through OpenRouter.
+8. Revisit campaigns from private history, save searches, and inspect Qloo trends.
 
 The analysis is a ranking aid, not a validated prediction of sales, conversions, or ROI. Audience geography and creator fees are reported as unavailable when the providers do not supply them.
 
@@ -61,7 +62,7 @@ pnpm test
 pnpm build
 ```
 
-The campaign page supports a print-friendly report and an authenticated CSV export at `/api/campaigns/:id/export`. `/api/health` is available for deployment health checks.
+The campaign page supports a print-friendly report / browser PDF save and an authenticated CSV export at `/api/campaigns/:id/export`. Authenticated campaign history is available at `/campaigns`; Qloo trends are available at `/trending`. `/api/health` is available for deployment health checks.
 
 ## Repository notes
 

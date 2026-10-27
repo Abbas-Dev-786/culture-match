@@ -20,7 +20,8 @@ export async function GET(_request: Request, context: RouteContext): Promise<Res
     const results = await getSafeResults(
       campaign.client,
       campaign.userId,
-      latest.run.id
+      latest.run.id,
+      campaign.campaign
     )
     return NextResponse.json({
       campaign: serializeCampaign(campaign.campaign),

@@ -11,6 +11,7 @@ import type { WorkflowStage } from "@/lib/domain/types"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/lib/db/database.types"
 import { logWorkflowEvent } from "@/lib/workflow/telemetry"
+import { SCORE_ALGORITHM_VERSION } from "@/lib/matching/score-creators"
 
 export interface WorkflowContext {
   client: SupabaseClient<Database>
@@ -547,6 +548,7 @@ export async function createRetryRun(
     idempotency_key: `${latest.data.id}:retry:${attempt}`,
     status: "queued",
     stage: "queued",
+    score_algorithm_version: SCORE_ALGORITHM_VERSION,
   }
   const result = await client
     .from("analysis_runs")

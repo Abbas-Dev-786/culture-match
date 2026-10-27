@@ -8,6 +8,7 @@ export type MarketValidationStatus =
 export interface DemoCampaignBrief {
   brandName: string
   productCategory: string
+  productDescription: string
   targetMarket: {
     country: string
     region?: string
@@ -50,6 +51,7 @@ export const phase0DemoMarket = {
 export const phase0DemoBrief = {
   brandName: "Northstar",
   productCategory: "streetwear",
+  productDescription: "Streetwear for urban audiences",
   targetMarket: {
     country: "India",
     marketScope: "country",

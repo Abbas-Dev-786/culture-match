@@ -12,10 +12,13 @@ import { ProviderError } from "../tools/provider-errors.ts"
 const brief: CampaignBrief = {
   brandName: "Nike",
   productCategory: "Streetwear",
+  productDescription: "Urban streetwear",
   targetMarket: { country: "India", marketScope: "country" },
   objective: "Launch awareness",
   culturalReferences: ["Nike"],
   preferredLanguages: ["English"],
+  qlooAgeRange: "35_and_younger",
+  qlooGender: "female",
   minFollowers: 10_000,
   maxFollowers: 500_000,
   creatorLimit: 5,
@@ -42,6 +45,8 @@ test("search plans preserve campaign constraints and distinguish variants", () =
   assert.notEqual(plans.baseline.query, plans.cultureInformed.query)
   assert.equal(plans.cultureInformed.minFollowers, 10_000)
   assert.equal(plans.cultureInformed.maxResults, 5)
+  assert.match(plans.cultureInformed.query, /female audience/)
+  assert.match(plans.cultureInformed.query, /younger audience/)
 })
 
 test("search plan schema rejects unsupported filters and URLs", () => {

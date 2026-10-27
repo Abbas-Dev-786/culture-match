@@ -66,16 +66,26 @@ export function createDeterministicSearchPlans(
   brief: CampaignBrief,
   signals: CultureSignal[]
 ): SearchPlans {
-  const baseline = buildPlan("baseline", brief, brief.productCategory)
+  const baseline = buildPlan("baseline", brief, [
+    brief.productCategory,
+    brief.productDescription,
+    brief.objective,
+    ...audienceTerms(brief),
+  ].join(" "))
   const terms = signals
     .filter((signal) => signal.evidence.verification !== "unverified")
     .sort((left, right) => (right.affinity ?? 0) - (left.affinity ?? 0))
     .slice(0, 3)
     .map((signal) => signal.name)
   const languageTerms = brief.preferredLanguages.slice(0, 3)
-  const culturalQuery = [brief.productCategory, ...terms, ...languageTerms].join(
-    " "
-  )
+  const culturalQuery = [
+    brief.productCategory,
+    brief.productDescription,
+    brief.objective,
+    ...terms,
+    ...languageTerms,
+    ...audienceTerms(brief),
+  ].join(" ")
   const cultureInformed = buildPlan("culture_informed", brief, culturalQuery)
   return { baseline, cultureInformed, source: "deterministic" }
 }
@@ -115,7 +125,7 @@ function buildPlan(
   query: string
 ): SearchPlan {
   const actorPlan = searchPlanSchema.parse({
-    query: `${query} creators in ${marketName(brief)}`,
+    query: `${query} creators in ${marketName(brief)}`.replace(/\s+/g, " ").trim().slice(0, 500),
     platforms: ["instagram"],
     ...(brief.minFollowers !== undefined
       ? { minFollowers: brief.minFollowers }
@@ -126,6 +136,16 @@ function buildPlan(
     maxResults: brief.creatorLimit,
   })
   return { ...actorPlan, variant }
+}
+
+function audienceTerms(brief: CampaignBrief): string[] {
+  return [
+    brief.qlooAgeRange === "25_to_34" ? "audience aged 25 to 34" : undefined,
+    brief.qlooAgeRange === "35_and_younger" ? "younger audience aged 35 and younger" : undefined,
+    brief.qlooAgeRange === "36_to_55" ? "audience aged 36 to 55" : undefined,
+    brief.qlooAgeRange === "55_and_older" ? "audience aged 55 and older" : undefined,
+    brief.qlooGender ? `${brief.qlooGender} audience` : undefined,
+  ].filter((value): value is string => Boolean(value))
 }
 
 function marketName(brief: CampaignBrief): string {

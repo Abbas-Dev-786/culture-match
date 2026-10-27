@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Database, CreatorCandidateRow, Json } from "@/lib/db/database.types"
+import type { Database, CreatorCandidateRow, Json, CampaignRow } from "@/lib/db/database.types"
 import { getCreatorMatches } from "@/lib/db/matches"
 import { getCultureProfile } from "@/lib/db/provider-results"
 import type {
@@ -19,6 +19,8 @@ import type {
 } from "@/lib/domain/types"
 import { ApplicationError } from "@/lib/errors"
 import { normalizeStoredCreator } from "@/lib/matching/normalize-creator"
+import { creatorTier, creatorTierLabel } from "@/lib/matching/creator-tier"
+import type { MatchConstraintStatus } from "@/lib/domain/types"
 
 export interface SafeCreatorResult {
   id: string
@@ -30,6 +32,17 @@ export interface SafeCreatorResult {
   bio?: string
   followers?: number
   engagementRate?: number
+  monthlyGrowthRate?: number
+  postingFrequency?: number
+  estimatedFee?: number
+  languages?: string[]
+  audienceRegions?: string[]
+  qlooAffinity?: number
+  qlooPopularity?: number
+  creatorTier: string
+  regionalMatch: MatchConstraintStatus
+  languageMatch: MatchConstraintStatus
+  matchReasons: string[]
   isVerified?: boolean
   locationUnverified: boolean
   rank: number
@@ -59,7 +72,8 @@ export interface SafeResults {
 export async function getSafeResults(
   client: SupabaseClient<Database>,
   userId: string,
-  analysisRunId: string
+  analysisRunId: string,
+  campaign: CampaignRow
 ): Promise<SafeResults> {
   const culture = await getCultureProfile(client, userId, analysisRunId)
   const cultureProfile = culture
@@ -86,7 +100,7 @@ export async function getSafeResults(
   const safeMatches = matches.flatMap((match) => {
     const candidate = candidates.get(match.creator_candidate_id)
     if (!candidate) return []
-    return [toSafeResult(match, candidate)]
+    return [toSafeResult(match, candidate, campaign)]
   })
   const comparison = readComparison(matches[0]?.comparison_metadata ?? {})
   return {
@@ -98,10 +112,20 @@ export async function getSafeResults(
 
 function toSafeResult(
   match: Awaited<ReturnType<typeof getCreatorMatches>>[number],
-  candidate: CreatorCandidateRow
+  candidate: CreatorCandidateRow,
+  campaign: CampaignRow
 ): SafeCreatorResult {
   const campaignConcept = readCampaignConcept(match.campaign_concept)
   const normalized = normalizeStoredCreator(candidate)
+  const regionalMatch = constraintStatus(
+    normalized.audienceRegions,
+    [campaign.market_city, campaign.market_region, campaign.market_country].filter(
+      (value): value is string => Boolean(value)
+    )
+  )
+  const languageMatch = constraintStatus(normalized.languages, campaign.preferred_languages)
+  const scoreComponents = readScoreComponents(match.score_components)
+  const matchReasons = buildMatchReasons(normalized, scoreComponents, regionalMatch, languageMatch)
   return {
     id: candidate.id,
     variant: candidate.search_variant,
@@ -114,6 +138,23 @@ function toSafeResult(
     ...(candidate.engagement_rate !== null
       ? { engagementRate: candidate.engagement_rate }
       : {}),
+    ...(normalized.monthlyGrowthRate !== undefined
+      ? { monthlyGrowthRate: normalized.monthlyGrowthRate }
+      : {}),
+    ...(normalized.postingFrequency !== undefined
+      ? { postingFrequency: normalized.postingFrequency }
+      : {}),
+    ...(normalized.estimatedFee !== undefined
+      ? { estimatedFee: normalized.estimatedFee }
+      : {}),
+    ...(normalized.languages ? { languages: normalized.languages } : {}),
+    ...(normalized.audienceRegions ? { audienceRegions: normalized.audienceRegions } : {}),
+    ...(normalized.qlooAffinity !== undefined ? { qlooAffinity: normalized.qlooAffinity } : {}),
+    ...(normalized.qlooPopularity !== undefined ? { qlooPopularity: normalized.qlooPopularity } : {}),
+    creatorTier: creatorTierLabel(creatorTier(normalized.followers)),
+    regionalMatch,
+    languageMatch,
+    matchReasons,
     ...(candidate.is_verified !== null
       ? { isVerified: candidate.is_verified }
       : {}),
@@ -122,7 +163,7 @@ function toSafeResult(
     campaignFitScore: match.campaign_fit_score,
     scoreAlgorithmVersion: match.score_algorithm_version,
     evidenceCompleteness: match.evidence_completeness,
-    scoreComponents: readScoreComponents(match.score_components),
+    scoreComponents,
     evidence: readEvidence(match.evidence),
     caveats: readStringArray(match.caveats),
     ...(normalized.contentSignals.length > 0
@@ -585,6 +626,51 @@ function readStringArray(value: Json): string[] {
   return Array.isArray(value) ? value.filter(isString) : []
 }
 
+function constraintStatus(
+  observed: string[] | undefined,
+  requested: string[]
+): MatchConstraintStatus {
+  if (!requested.length || !observed?.length) return "unverified"
+  const normalizedObserved = observed.map(normalizeLabel)
+  return requested.some((value) => {
+    const normalizedRequested = normalizeLabel(value)
+    return normalizedObserved.some(
+      (candidate) => candidate === normalizedRequested || candidate.includes(normalizedRequested) || normalizedRequested.includes(candidate)
+    )
+  })
+    ? "matched"
+    : "not_matched"
+}
+
+function normalizeLabel(value: string): string {
+  return value.trim().toLocaleLowerCase().replaceAll(/[^\p{L}\p{N}]+/gu, " ")
+}
+
+function buildMatchReasons(
+  creator: ReturnType<typeof normalizeStoredCreator>,
+  components: ScoreComponent[],
+  regionalMatch: MatchConstraintStatus,
+  languageMatch: MatchConstraintStatus
+): string[] {
+  const reasons: string[] = []
+  const culture = components.find((component) => component.key === "culturalAffinity")
+  if (creator.qlooAffinity !== undefined) {
+    reasons.push(`Qloo person-level cultural affinity: ${(creator.qlooAffinity * 100).toFixed(0)}/100`)
+  } else if (culture?.score !== undefined && creator.qlooSignals?.length) {
+    reasons.push(`Qloo matched ${creator.qlooSignals.length} creator-content signal${creator.qlooSignals.length === 1 ? "" : "s"}`)
+  }
+  const engagement = components.find((component) => component.key === "engagementRate")
+  if (creator.engagementRate !== undefined && engagement?.score !== undefined) {
+    reasons.push(`Provider engagement rate: ${(creator.engagementRate * 100).toFixed(2)}%`)
+  }
+  if (creator.providerMatchScore !== undefined) {
+    reasons.push(`Natural-language search relevance: ${(creator.providerMatchScore * 100).toFixed(0)}/100`)
+  }
+  if (regionalMatch === "matched") reasons.push("Provider-reported audience region matches the target market")
+  if (languageMatch === "matched") reasons.push("Provider-reported language matches campaign needs")
+  return reasons.length > 0 ? reasons.slice(0, 5) : ["No verified match rationale is available from provider data"]
+}
+
 function isEvidenceSource(
   value: Json | undefined
 ): value is EvidenceRef["source"] {
@@ -647,7 +733,7 @@ function isHeatmapBoundary(
 }
 
 function isAgeRange(value: Json | undefined): value is QlooAgeRange {
-  return value === "35_and_younger" || value === "36_to_55" || value === "55_and_older"
+  return value === "25_to_34" || value === "35_and_younger" || value === "36_to_55" || value === "55_and_older"
 }
 
 function isGender(value: Json | undefined): value is QlooGender {

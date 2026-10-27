@@ -14,7 +14,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 
 type MarketScope = "country" | "region" | "city"
-type QlooAgeRange = "35_and_younger" | "36_to_55" | "55_and_older"
+type QlooAgeRange = "25_to_34" | "35_and_younger" | "36_to_55" | "55_and_older"
 type QlooGender = "male" | "female"
 
 interface CreateCampaignResponse {
@@ -32,6 +32,7 @@ export function CampaignForm() {
   const router = useRouter()
   const [brandName, setBrandName] = useState("")
   const [productCategory, setProductCategory] = useState("")
+  const [productDescription, setProductDescription] = useState("")
   const [country, setCountry] = useState("")
   const [region, setRegion] = useState("")
   const [city, setCity] = useState("")
@@ -39,12 +40,11 @@ export function CampaignForm() {
   const [objective, setObjective] = useState("")
   const [culturalReferences, setCulturalReferences] = useState("")
   const [preferredLanguages, setPreferredLanguages] = useState("")
-  const [qlooAudienceIds, setQlooAudienceIds] = useState("")
-  const [qlooAudienceWeight, setQlooAudienceWeight] = useState("10")
   const [qlooAgeRange, setQlooAgeRange] = useState<QlooAgeRange | "">("")
   const [qlooGender, setQlooGender] = useState<QlooGender | "">("")
   const [minFollowers, setMinFollowers] = useState("")
   const [maxFollowers, setMaxFollowers] = useState("")
+  const [minBudget, setMinBudget] = useState("")
   const [maxBudget, setMaxBudget] = useState("")
   const [currency, setCurrency] = useState("")
   const [creatorLimit, setCreatorLimit] = useState("5")
@@ -57,6 +57,7 @@ export function CampaignForm() {
     const validationMessage = validateForm({
       brandName,
       productCategory,
+      productDescription,
       country,
       region,
       city,
@@ -64,11 +65,10 @@ export function CampaignForm() {
       objective,
       minFollowers,
       maxFollowers,
+      minBudget,
       maxBudget,
       currency,
       creatorLimit,
-      qlooAudienceIds,
-      qlooAudienceWeight,
       consentGiven,
     })
     if (validationMessage) {
@@ -95,20 +95,16 @@ export function CampaignForm() {
           brief: {
             brandName: brandName.trim(),
             productCategory: productCategory.trim(),
+            productDescription: productDescription.trim(),
             targetMarket,
             objective: objective.trim(),
             culturalReferences: splitList(culturalReferences),
             preferredLanguages: splitList(preferredLanguages),
-            ...(splitList(qlooAudienceIds).length > 0
-              ? { qlooAudienceIds: splitList(qlooAudienceIds) }
-              : {}),
-            ...(splitList(qlooAudienceIds).length > 0 && optionalNumber(qlooAudienceWeight) !== undefined
-              ? { qlooAudienceWeight: optionalNumber(qlooAudienceWeight) }
-              : {}),
             ...(qlooAgeRange ? { qlooAgeRange } : {}),
             ...(qlooGender ? { qlooGender } : {}),
             minFollowers: optionalNumber(minFollowers),
             maxFollowers: optionalNumber(maxFollowers),
+            minBudget: optionalNumber(minBudget),
             maxBudget: optionalNumber(maxBudget),
             currency: currency.trim().toUpperCase() || undefined,
             creatorLimit: optionalNumber(creatorLimit),
@@ -133,15 +129,15 @@ export function CampaignForm() {
       <div className="mx-auto max-w-3xl">
         <div className="mb-8 flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm text-muted-foreground">CultureMatch</p>
-            <h1 className="font-heading text-3xl font-semibold tracking-tight">Start a campaign</h1>
+            <p className="text-sm text-muted-foreground">CultureMatch / Campaigns</p>
+            <h1 className="font-heading text-3xl font-semibold tracking-tight">Build a campaign brief</h1>
           </div>
           <Button variant="ghost" nativeButton={false} render={<Link href="/" />}>Home</Button>
         </div>
         <Card>
           <CardHeader>
             <CardTitle>Campaign brief</CardTitle>
-            <CardDescription>Capture the constraints that will drive cultural research and creator discovery.</CardDescription>
+            <CardDescription>Give CultureMatch enough context to find creators who fit the market, not just the category.</CardDescription>
           </CardHeader>
           <CardContent>
             <form className="grid gap-7" onSubmit={handleSubmit} noValidate>
@@ -156,12 +152,16 @@ export function CampaignForm() {
                     <Input id="brandName" value={brandName} onChange={(event) => setBrandName(event.target.value)} placeholder="Northstar" required />
                   </Field>
                   <Field>
-                    <FieldLabel htmlFor="productCategory">Product or category</FieldLabel>
+                    <FieldLabel htmlFor="productCategory">Product name</FieldLabel>
                     <Input id="productCategory" value={productCategory} onChange={(event) => setProductCategory(event.target.value)} placeholder="Streetwear" required />
                   </Field>
                 </div>
                 <Field>
-                  <FieldLabel htmlFor="objective">Campaign objective</FieldLabel>
+                  <FieldLabel htmlFor="productDescription">Product description</FieldLabel>
+                  <Textarea id="productDescription" value={productDescription} onChange={(event) => setProductDescription(event.target.value)} placeholder="Sustainable shoes for urban runners" required />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="objective">Campaign goal</FieldLabel>
                   <Textarea id="objective" value={objective} onChange={(event) => setObjective(event.target.value)} placeholder="Launch awareness for a limited regional collection" required />
                 </Field>
               </section>
@@ -216,32 +216,21 @@ export function CampaignForm() {
                 <div className="grid gap-5 md:grid-cols-2">
                   <Field>
                     <FieldLabel htmlFor="culturalReferences">Cultural references</FieldLabel>
-                    <Input id="culturalReferences" value={culturalReferences} onChange={(event) => setCulturalReferences(event.target.value)} placeholder="Nike, Adidas" />
+                    <Input id="culturalReferences" value={culturalReferences} onChange={(event) => setCulturalReferences(event.target.value)} placeholder="Minimalism, eco-conscious, outdoor" />
                   </Field>
                   <Field>
-                    <FieldLabel htmlFor="preferredLanguages">Preferred content languages</FieldLabel>
-                    <Input id="preferredLanguages" value={preferredLanguages} onChange={(event) => setPreferredLanguages(event.target.value)} placeholder="English, Hindi" />
-                  </Field>
-                </div>
-                <div className="grid gap-5 md:grid-cols-2">
-                  <Field>
-                    <FieldLabel htmlFor="qlooAudienceIds">Qloo audience IDs (optional)</FieldLabel>
-                    <Input id="qlooAudienceIds" value={qlooAudienceIds} onChange={(event) => setQlooAudienceIds(event.target.value)} placeholder="urn:audience:..." />
-                    <FieldDescription>Only use audience IDs explicitly selected for this campaign. Separate multiple IDs with commas.</FieldDescription>
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="qlooAudienceWeight">Audience signal weight</FieldLabel>
-                    <Input id="qlooAudienceWeight" type="number" min="0.01" max="100" step="0.01" value={qlooAudienceWeight} onChange={(event) => setQlooAudienceWeight(event.target.value)} />
-                    <FieldDescription>Relative Qloo influence; applied only when audience IDs are provided.</FieldDescription>
+                    <FieldLabel htmlFor="preferredLanguages">Language needs</FieldLabel>
+                    <Input id="preferredLanguages" value={preferredLanguages} onChange={(event) => setPreferredLanguages(event.target.value)} placeholder="German, English" />
                   </Field>
                 </div>
                 <div className="grid gap-5 md:grid-cols-2">
                   <Field>
-                    <FieldLabel htmlFor="qlooAgeRange">Explicit Qloo age conditioning</FieldLabel>
+                    <FieldLabel htmlFor="qlooAgeRange">Target age range</FieldLabel>
                     <Select value={qlooAgeRange || "none"} onValueChange={(value) => setQlooAgeRange(value === "none" ? "" : value as QlooAgeRange)}>
                       <SelectTrigger id="qlooAgeRange" className="w-full" aria-label="Explicit Qloo age conditioning"><SelectValue placeholder="No age conditioning" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">No age conditioning</SelectItem>
+                        <SelectItem value="25_to_34">25 to 34</SelectItem>
                         <SelectItem value="35_and_younger">35 and younger</SelectItem>
                         <SelectItem value="36_to_55">36 to 55</SelectItem>
                         <SelectItem value="55_and_older">55 and older</SelectItem>
@@ -249,7 +238,7 @@ export function CampaignForm() {
                     </Select>
                   </Field>
                   <Field>
-                    <FieldLabel htmlFor="qlooGender">Explicit Qloo gender conditioning</FieldLabel>
+                    <FieldLabel htmlFor="qlooGender">Target gender</FieldLabel>
                     <Select value={qlooGender || "none"} onValueChange={(value) => setQlooGender(value === "none" ? "" : value as QlooGender)}>
                       <SelectTrigger id="qlooGender" className="w-full" aria-label="Explicit Qloo gender conditioning"><SelectValue placeholder="No gender conditioning" /></SelectTrigger>
                       <SelectContent>
@@ -260,7 +249,7 @@ export function CampaignForm() {
                     </Select>
                   </Field>
                 </div>
-                <p className="text-xs text-muted-foreground">These are explicit Qloo affinity inputs, not inferred identity or verified audience demographics.</p>
+                <p className="text-xs text-muted-foreground">These inputs condition cultural research. They are not verified creator audience demographics.</p>
               </section>
 
               <section className="grid gap-5" aria-labelledby="constraints-heading">
@@ -282,15 +271,19 @@ export function CampaignForm() {
                     <Input id="creatorLimit" type="number" min="1" max="100" value={creatorLimit} onChange={(event) => setCreatorLimit(event.target.value)} required />
                   </Field>
                 </div>
-                <div className="grid gap-5 md:grid-cols-2">
+                <div className="grid gap-5 md:grid-cols-3">
                   <Field>
-                    <FieldLabel htmlFor="maxBudget">Maximum budget</FieldLabel>
+                    <FieldLabel htmlFor="minBudget">Minimum campaign budget</FieldLabel>
+                    <Input id="minBudget" type="number" min="1" value={minBudget} onChange={(event) => setMinBudget(event.target.value)} />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="maxBudget">Maximum campaign budget</FieldLabel>
                     <Input id="maxBudget" type="number" min="1" value={maxBudget} onChange={(event) => setMaxBudget(event.target.value)} />
                   </Field>
                   <Field>
                     <FieldLabel htmlFor="currency">Currency</FieldLabel>
                     <Input id="currency" maxLength={3} value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase())} placeholder="INR" />
-                    <FieldDescription>Required when a maximum budget is provided.</FieldDescription>
+                    <FieldDescription>Required when either budget value is provided.</FieldDescription>
                   </Field>
                 </div>
               </section>
@@ -320,6 +313,7 @@ function splitList(value: string): string[] {
 function validateForm(input: {
   brandName: string
   productCategory: string
+  productDescription: string
   country: string
   region: string
   city: string
@@ -327,14 +321,13 @@ function validateForm(input: {
   objective: string
   minFollowers: string
   maxFollowers: string
+  minBudget: string
   maxBudget: string
   currency: string
   creatorLimit: string
-  qlooAudienceIds: string
-  qlooAudienceWeight: string
   consentGiven: boolean
 }): string | undefined {
-  if (!input.brandName.trim() || !input.productCategory.trim() || !input.country.trim() || !input.objective.trim()) return "Brand, product, country, and objective are required."
+  if (!input.brandName.trim() || !input.productCategory.trim() || !input.productDescription.trim() || !input.country.trim() || !input.objective.trim()) return "Brand, product name, product description, country, and campaign goal are required."
   if (input.marketScope !== "country" && !input.region.trim()) return "Add a region or state for this market scope."
   if (input.marketScope === "city" && !input.city.trim()) return "Add a city for a city-level market."
   const min = optionalNumber(input.minFollowers)
@@ -342,12 +335,12 @@ function validateForm(input: {
   if (input.minFollowers.trim() && min === undefined) return "Minimum followers must be a valid number."
   if (input.maxFollowers.trim() && max === undefined) return "Maximum followers must be a valid number."
   if (min !== undefined && max !== undefined && min > max) return "Minimum followers cannot exceed maximum followers."
-  if (input.maxBudget.trim() && optionalNumber(input.maxBudget) === undefined) return "Maximum budget must be a valid number."
-  if (input.maxBudget.trim() && !/^[A-Za-z]{3}$/.test(input.currency.trim())) return "Enter a three-letter currency when setting a budget."
-  if (input.qlooAudienceIds.trim()) {
-    const weight = optionalNumber(input.qlooAudienceWeight)
-    if (weight === undefined || weight <= 0 || weight > 100) return "Qloo audience weight must be between 0 and 100."
-  }
+  const minBudget = optionalNumber(input.minBudget)
+  const maxBudget = optionalNumber(input.maxBudget)
+  if (input.minBudget.trim() && minBudget === undefined) return "Minimum budget must be a valid number."
+  if (input.maxBudget.trim() && maxBudget === undefined) return "Maximum budget must be a valid number."
+  if (minBudget !== undefined && maxBudget !== undefined && minBudget > maxBudget) return "Minimum budget cannot exceed maximum budget."
+  if ((input.minBudget.trim() || input.maxBudget.trim()) && !/^[A-Za-z]{3}$/.test(input.currency.trim())) return "Enter a three-letter currency when setting a budget."
   const creatorLimit = optionalNumber(input.creatorLimit)
   if (creatorLimit === undefined || !Number.isInteger(creatorLimit) || creatorLimit < 1 || creatorLimit > 100) return "Creator limit must be an integer from 1 to 100."
   if (!input.consentGiven) return "Confirm that you understand the campaign brief will be persisted."

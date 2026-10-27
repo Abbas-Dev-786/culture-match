@@ -7,6 +7,7 @@ import { scoreCreator, scoreCreators } from "./score-creators.ts"
 const brief: CampaignBrief = {
   brandName: "Nike",
   productCategory: "Streetwear",
+  productDescription: "Urban streetwear for regional creators",
   targetMarket: { country: "India", marketScope: "country" },
   objective: "Launch awareness",
   culturalReferences: ["Nike"],
@@ -87,12 +88,12 @@ test("score math renormalizes over available components", () => {
     })
   )
   assert.equal(result.campaignFitScore !== null, true)
-  assert.equal(result.evidenceCompleteness, 0.85)
+  assert.equal(result.evidenceCompleteness, 0.6)
   assert.equal(
-    result.components.find((component) => component.key === "marketRelevance")?.availability,
-    "unavailable"
+    result.components.find((component) => component.key === "budgetTierFit")?.availability,
+    "unavailable",
   )
-  assert.equal(result.caveats.includes("Audience geography is unavailable; creator location is not audience evidence"), true)
+  assert.equal(result.caveats.includes("Audience geography is not verified; creator location is not audience evidence"), true)
 })
 
 test("missing provider fields remain unavailable instead of becoming zero scores", () => {

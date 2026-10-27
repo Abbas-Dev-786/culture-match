@@ -151,7 +151,7 @@ export function CampaignView({ campaignId }: CampaignViewProps) {
       <div className="mx-auto max-w-5xl">
         <div className="no-print mb-8 flex items-center justify-between gap-4">
           <div>
-            <p className="text-sm text-muted-foreground">Campaign workspace</p>
+            <p className="text-sm text-muted-foreground">CultureMatch / Campaign report</p>
             <h1 className="font-heading text-3xl font-semibold tracking-tight">
               {data?.campaign?.brandName ?? "Campaign"}
             </h1>
@@ -174,8 +174,8 @@ export function CampaignView({ campaignId }: CampaignViewProps) {
           <div className="grid gap-5">
             <Card className="print-break-inside-avoid">
               <CardHeader>
-                <CardTitle>{data?.campaign?.productCategory ?? "Campaign"}</CardTitle>
-                <CardDescription>{data?.campaign?.objective ?? "Saved campaign brief"}</CardDescription>
+                  <CardTitle>{data?.campaign?.productCategory ?? "Campaign"}</CardTitle>
+                  <CardDescription>{data?.campaign?.objective ?? "Saved campaign brief"}</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-5">
                 <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
@@ -197,7 +197,7 @@ export function CampaignView({ campaignId }: CampaignViewProps) {
                       <Button variant="outline" onClick={() => void downloadCsv()} disabled={isExporting}>
                         {isExporting ? <><Spinner /> Exporting...</> : "Download CSV"}
                       </Button>
-                      <Button variant="outline" onClick={() => window.print()}>Print report</Button>
+                      <Button variant="outline" onClick={() => window.print()}>Save PDF / print</Button>
                     </>
                   ) : null}
                 </div>
@@ -224,8 +224,8 @@ export function CampaignView({ campaignId }: CampaignViewProps) {
             ) : cultureMatches.length > 0 ? (
               <Card>
                 <CardHeader>
-                  <CardTitle>Culture-informed recommendations</CardTitle>
-                  <CardDescription>Ranked from the available provider evidence.</CardDescription>
+                  <CardTitle>CultureMatch shortlist</CardTitle>
+                  <CardDescription>Ranked by cultural affinity, engagement, semantic relevance, growth, consistency, and available budget evidence.</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-3">
                   {cultureMatches.map((match) => <CreatorCard key={match.id} match={match} />)}

@@ -18,12 +18,17 @@ export function serializeCampaign(campaign: CampaignRow): SafeCampaign {
     id: campaign.id,
     brandName: campaign.brand_name,
     productCategory: campaign.product_category,
+    productDescription: campaign.product_description,
     objective: campaign.objective,
     targetMarket,
     creatorLimit: campaign.creator_limit,
+    ...(campaign.min_budget !== null ? { minBudget: campaign.min_budget } : {}),
+    ...(campaign.max_budget !== null ? { maxBudget: campaign.max_budget } : {}),
+    ...(campaign.currency ? { currency: campaign.currency } : {}),
     status: campaign.status,
     createdAt: campaign.created_at,
     updatedAt: campaign.updated_at,
+    isSaved: campaign.is_saved,
   }
 }
 

@@ -12,7 +12,10 @@ import type {
   EvidenceRef,
 } from "@/lib/domain/types"
 import { ApplicationError } from "@/lib/errors"
-import type { ScoredCreator } from "@/lib/matching/score-creators"
+import {
+  SCORE_ALGORITHM_VERSION,
+  type ScoredCreator,
+} from "@/lib/matching/score-creators"
 
 export async function getCreatorCandidates(
   client: SupabaseClient<Database>,
@@ -55,7 +58,7 @@ export async function saveCreatorMatches(
         user_id: input.userId,
         rank: index + 1,
         campaign_fit_score: result.campaignFitScore,
-        score_algorithm_version: "phase3-v1",
+        score_algorithm_version: SCORE_ALGORITHM_VERSION,
         evidence_completeness: result.evidenceCompleteness,
         score_components: result.components.map(componentToJson),
         evidence: result.evidence.map(evidenceToJson),

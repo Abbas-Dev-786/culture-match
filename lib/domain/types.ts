@@ -14,12 +14,14 @@ export interface TargetMarket {
 export interface CampaignBrief {
   brandName: string
   productCategory: string
+  productDescription: string
   targetMarket: TargetMarket
   objective: string
   culturalReferences: string[]
   preferredLanguages: string[]
   minFollowers?: number
   maxFollowers?: number
+  minBudget?: number
   maxBudget?: number
   currency?: string
   qlooAudienceIds?: string[]
@@ -50,6 +52,7 @@ export type WorkflowStage =
   | "generating_report"
 
 export type VerificationState = "verified" | "provider_reported" | "unverified"
+export type MatchConstraintStatus = "matched" | "not_matched" | "unverified"
 
 export type QlooSignalKind = "entity" | "tag" | "audience" | "locality"
 
@@ -62,6 +65,7 @@ export type QlooSignalGroup =
   | "creator"
 
 export type QlooAgeRange =
+  | "25_to_34"
   | "35_and_younger"
   | "36_to_55"
   | "55_and_older"
@@ -175,6 +179,14 @@ export interface NormalizedCreator {
   bio?: string
   followers?: number
   engagementRate?: number
+  monthlyGrowthRate?: number
+  postingFrequency?: number
+  estimatedFee?: number
+  languages?: string[]
+  audienceRegions?: string[]
+  qlooEntityId?: string
+  qlooAffinity?: number
+  qlooPopularity?: number
   isVerified?: boolean
   locationUnverified?: boolean
   providerMatchScore?: number
@@ -270,12 +282,26 @@ export interface SafeCampaign {
   id: string
   brandName: string
   productCategory: string
+  productDescription: string
   objective: string
   targetMarket: TargetMarket
   creatorLimit: number
+  minBudget?: number
+  maxBudget?: number
+  currency?: string
   status: CampaignStatus
   createdAt: string
   updatedAt: string
+  isSaved: boolean
+}
+
+export interface TrendingEntity {
+  entityId: string
+  name: string
+  types: string[]
+  affinity?: number
+  popularity?: number
+  trendScore?: number
 }
 
 export interface SafeAnalysisRun {

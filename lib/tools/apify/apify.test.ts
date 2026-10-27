@@ -43,6 +43,7 @@ test("Apify normalizes only observed creator fields", async () => {
   assert.equal(result?.creators.length, 5)
   assert.equal(result?.creators[0]?.platform, "instagram")
   assert.equal(result?.creators[0]?.followers, 161499)
+  assert.equal(result?.creators[0]?.engagementRate, 0.007)
   assert.equal(result?.creators[0]?.locationUnverified, true)
   assert.equal(
     result?.creators[0]?.evidence.some((item) =>

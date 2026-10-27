@@ -109,7 +109,21 @@ function normalizeCreator(
   const username = readString(profile.username)
   const profileUrl = readString(profile.url)
   const followers = readNonNegativeNumber(profile.followers)
-  const engagementRate = readNonNegativeNumber(profile.engagement_rate)
+  const engagementRate = readEngagementRate(profile.engagement_rate)
+  const monthlyGrowthRate = readMetric(
+    [profile, creator, value],
+    ["monthly_growth_rate", "monthlyGrowthRate", "growth_rate", "growthRate"],
+  )
+  const postingFrequency = readMetric(
+    [profile, creator, value],
+    ["posting_frequency", "postingFrequency", "posts_per_month", "postsPerMonth"],
+  )
+  const estimatedFee = readMetric(
+    [profile, creator, value],
+    ["estimated_fee", "estimatedFee", "fee", "rate"],
+  )
+  const languages = readLabelArray([profile, creator, value], ["languages", "language", "content_languages", "contentLanguages"])
+  const audienceRegions = readLabelArray([profile, creator, value], ["audience_locations", "audienceLocations", "audience_regions", "audienceRegions"])
   const isVerified =
     typeof profile.is_verified === "boolean" ? profile.is_verified : undefined
   const locationUnverified =
@@ -122,11 +136,14 @@ function normalizeCreator(
   const missingFields = [
     followers === undefined ? "followers" : undefined,
     engagementRate === undefined ? "engagementRate" : undefined,
+    monthlyGrowthRate === undefined ? "monthlyGrowthRate" : undefined,
+    postingFrequency === undefined ? "postingFrequency" : undefined,
+    estimatedFee === undefined ? "estimatedFee" : undefined,
     isVerified === undefined ? "isVerified" : undefined,
     bio === undefined ? "bio" : undefined,
     contentSignals.length === 0 ? "contentSignals" : undefined,
-    locationUnverified ? "audienceLocations" : undefined,
-    "languages",
+    audienceRegions.length === 0 ? "audienceLocations" : undefined,
+    languages.length === 0 ? "languages" : undefined,
     "fees",
   ].filter((field): field is string => field !== undefined)
 
@@ -155,6 +172,18 @@ function normalizeCreator(
         String(engagementRate)
       )
     )
+  if (monthlyGrowthRate !== undefined)
+    evidence.push(
+      fieldEvidence("$.primary_profile.monthly_growth_rate", observedAt, String(monthlyGrowthRate)),
+    )
+  if (postingFrequency !== undefined)
+    evidence.push(
+      fieldEvidence("$.primary_profile.posting_frequency", observedAt, String(postingFrequency)),
+    )
+  if (estimatedFee !== undefined)
+    evidence.push(
+      fieldEvidence("$.primary_profile.estimated_fee", observedAt, String(estimatedFee)),
+    )
   if (isVerified !== undefined)
     evidence.push(
       fieldEvidence(
@@ -175,6 +204,10 @@ function normalizeCreator(
     evidence.push(
       fieldEvidence("$.match.score", observedAt, String(providerMatchScore))
     )
+  if (languages.length > 0)
+    evidence.push(fieldEvidence("$.primary_profile.languages", observedAt, languages.join(", ")))
+  if (audienceRegions.length > 0)
+    evidence.push(fieldEvidence("$.primary_profile.audience_locations", observedAt, audienceRegions.join(", ")))
 
   return [
     {
@@ -187,6 +220,11 @@ function normalizeCreator(
       ...(bio ? { bio } : {}),
       ...(followers !== undefined ? { followers } : {}),
       ...(engagementRate !== undefined ? { engagementRate } : {}),
+      ...(monthlyGrowthRate !== undefined ? { monthlyGrowthRate } : {}),
+      ...(postingFrequency !== undefined ? { postingFrequency } : {}),
+      ...(estimatedFee !== undefined ? { estimatedFee } : {}),
+      ...(languages.length > 0 ? { languages } : {}),
+      ...(audienceRegions.length > 0 ? { audienceRegions } : {}),
       ...(isVerified !== undefined ? { isVerified } : {}),
       locationUnverified,
       ...(providerMatchScore !== undefined ? { providerMatchScore } : {}),
@@ -198,6 +236,11 @@ function normalizeCreator(
         ...(profileUrl ? { profileUrl } : {}),
         ...(followers !== undefined ? { followers } : {}),
         ...(engagementRate !== undefined ? { engagementRate } : {}),
+        ...(monthlyGrowthRate !== undefined ? { monthlyGrowthRate } : {}),
+        ...(postingFrequency !== undefined ? { postingFrequency } : {}),
+        ...(estimatedFee !== undefined ? { estimatedFee } : {}),
+        ...(languages.length > 0 ? { languages } : {}),
+        ...(audienceRegions.length > 0 ? { audienceRegions } : {}),
         ...(isVerified !== undefined ? { isVerified } : {}),
         locationUnverified,
         ...(providerMatchScore !== undefined ? { providerMatchScore } : {}),
@@ -284,10 +327,54 @@ function readStringArray(value: unknown): string[] {
     : []
 }
 
+function readLabelArray(
+  records: Array<Record<string, unknown>>,
+  keys: string[],
+): string[] {
+  return [...new Set(records.flatMap((record) => keys.flatMap((key) => {
+    const value = record[key]
+    if (typeof value === "string") return value.split(",").map((item) => item.trim()).filter(Boolean)
+    if (!Array.isArray(value)) return []
+    return value.flatMap((item) => {
+      if (typeof item === "string") return [item.trim()].filter(Boolean)
+      if (isRecord(item)) return [readString(item.name) ?? readString(item.label) ?? readString(item.location)].filter((item): item is string => Boolean(item))
+      return []
+    })
+  })))]
+}
+
 function readNonNegativeNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0
-    ? value
+  const number = readNumber(value)
+  return number !== undefined && number >= 0 ? number : undefined
+}
+
+function readEngagementRate(value: unknown): number | undefined {
+  const percentage = readNonNegativeNumber(value)
+  return percentage !== undefined && percentage <= 100
+    ? Math.round((percentage / 100) * 1_000_000) / 1_000_000
     : undefined
+}
+
+function readNumber(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined
+  }
+  if (typeof value !== "string" || !value.trim()) return undefined
+  const parsed = Number(value.replaceAll(",", "").replace("%", "").trim())
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function readMetric(
+  records: Array<Record<string, unknown>>,
+  keys: string[],
+): number | undefined {
+  for (const record of records) {
+    for (const key of keys) {
+      const value = readNonNegativeNumber(record[key])
+      if (value !== undefined) return value
+    }
+  }
+  return undefined
 }
 
 function readUnitNumber(value: unknown): number | undefined {

@@ -13,6 +13,7 @@ export type CampaignRow = {
   user_id: string
   brand_name: string
   product_category: string
+  product_description: string
   objective: string
   market_country: string
   market_region: string | null
@@ -22,14 +23,16 @@ export type CampaignRow = {
   preferred_languages: string[]
   min_followers: number | null
   max_followers: number | null
+  min_budget: number | null
   max_budget: number | null
   currency: string | null
   qloo_audience_ids: string[]
   qloo_audience_weight: number | null
-  qloo_age_range: "35_and_younger" | "36_to_55" | "55_and_older" | null
+  qloo_age_range: "25_to_34" | "35_and_younger" | "36_to_55" | "55_and_older" | null
   qloo_gender: "male" | "female" | null
   creator_limit: number
   status: CampaignStatus
+  is_saved: boolean
   created_at: string
   updated_at: string
 }
@@ -39,6 +42,7 @@ export type CampaignInsert = {
   user_id: string
   brand_name: string
   product_category: string
+  product_description: string
   objective: string
   market_country: string
   market_region?: string | null
@@ -48,14 +52,16 @@ export type CampaignInsert = {
   preferred_languages: string[]
   min_followers?: number | null
   max_followers?: number | null
+  min_budget?: number | null
   max_budget?: number | null
   currency?: string | null
   qloo_audience_ids?: string[]
   qloo_audience_weight?: number | null
-  qloo_age_range?: "35_and_younger" | "36_to_55" | "55_and_older" | null
+  qloo_age_range?: "25_to_34" | "35_and_younger" | "36_to_55" | "55_and_older" | null
   qloo_gender?: "male" | "female" | null
   creator_limit: number
   status?: CampaignStatus
+  is_saved?: boolean
   created_at?: string
   updated_at?: string
 }

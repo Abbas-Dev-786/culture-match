@@ -69,7 +69,7 @@ export interface CultureProfileView {
     conditioning?: {
       audienceIds: string[]
       audienceWeight?: number
-      ageRange?: "35_and_younger" | "36_to_55" | "55_and_older"
+      ageRange?: "25_to_34" | "35_and_younger" | "36_to_55" | "55_and_older"
       gender?: "male" | "female"
     }
     tagOperator?: "union" | "intersection"
@@ -97,6 +97,17 @@ export interface CampaignMatchView {
   bio?: string
   followers?: number
   engagementRate?: number
+  monthlyGrowthRate?: number
+  postingFrequency?: number
+  estimatedFee?: number
+  languages?: string[]
+  audienceRegions?: string[]
+  qlooAffinity?: number
+  qlooPopularity?: number
+  creatorTier: string
+  regionalMatch: "matched" | "not_matched" | "unverified"
+  languageMatch: "matched" | "not_matched" | "unverified"
+  matchReasons: string[]
   isVerified?: boolean
   locationUnverified: boolean
   rank: number

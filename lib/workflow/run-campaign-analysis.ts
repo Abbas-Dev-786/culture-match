@@ -334,6 +334,7 @@ async function advanceWorkflow(
   }
   let enrichedBaselineCreators = baselineResults.creators
   let enrichedCultureCreators = cultureResults.creators
+  const culture = await getCultureProfile(client, userId, run.id)
   try {
     const allCreators = [
       ...baselineResults.creators,
@@ -342,7 +343,14 @@ async function advanceWorkflow(
     const enrichedCreators = await enrichCreatorsWithQloo(
       allCreators,
       locationQueryForCampaign(campaign),
-      createQlooClient()
+      createQlooClient(),
+      normalizeCultureSignals(culture?.signals ?? []),
+      {
+        ...(brief.qlooAudienceIds ? { audienceIds: brief.qlooAudienceIds } : {}),
+        ...(brief.qlooAudienceWeight !== undefined ? { audienceWeight: brief.qlooAudienceWeight } : {}),
+        ...(brief.qlooAgeRange ? { ageRange: brief.qlooAgeRange } : {}),
+        ...(brief.qlooGender ? { gender: brief.qlooGender } : {}),
+      }
     )
     const enrichedById = new Map(
       enrichedCreators.map((creator) => [creator.providerCreatorId, creator])
@@ -589,6 +597,7 @@ function campaignToBrief(campaign: CampaignRow): CampaignBrief {
   return {
     brandName: campaign.brand_name,
     productCategory: campaign.product_category,
+    productDescription: campaign.product_description,
     objective: campaign.objective,
     targetMarket: {
       country: campaign.market_country,
@@ -604,6 +613,7 @@ function campaignToBrief(campaign: CampaignRow): CampaignBrief {
     ...(campaign.max_followers !== null
       ? { maxFollowers: campaign.max_followers }
       : {}),
+    ...(campaign.min_budget !== null ? { minBudget: campaign.min_budget } : {}),
     ...(campaign.max_budget !== null ? { maxBudget: campaign.max_budget } : {}),
     ...(campaign.currency ? { currency: campaign.currency } : {}),
     ...(campaign.qloo_audience_ids.length > 0

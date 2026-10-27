@@ -8,6 +8,7 @@ import type {
 } from "@/lib/db/database.types"
 import { requireAuthenticatedUser } from "@/lib/db/auth"
 import type { Database } from "@/lib/db/database.types"
+import { SCORE_ALGORITHM_VERSION } from "@/lib/matching/score-creators"
 
 function toCampaignInsert(
   input: CreateCampaignRequest["brief"],
@@ -17,6 +18,7 @@ function toCampaignInsert(
     user_id: userId,
     brand_name: input.brandName,
     product_category: input.productCategory,
+    product_description: input.productDescription,
     objective: input.objective,
     market_country: input.targetMarket.country,
     market_region: input.targetMarket.region ?? null,
@@ -26,6 +28,7 @@ function toCampaignInsert(
     preferred_languages: input.preferredLanguages,
     min_followers: input.minFollowers ?? null,
     max_followers: input.maxFollowers ?? null,
+    min_budget: input.minBudget ?? null,
     max_budget: input.maxBudget ?? null,
     currency: input.currency ?? null,
     qloo_audience_ids: input.qlooAudienceIds ?? [],
@@ -76,6 +79,7 @@ export async function createCampaignWithRun(
       idempotency_key: input.idempotencyKey,
       status: "queued",
       stage: "queued",
+      score_algorithm_version: SCORE_ALGORITHM_VERSION,
     })
     .select("*")
     .single()
@@ -120,6 +124,42 @@ export async function getCampaignById(
     throw new ApplicationError("CAMPAIGN_NOT_FOUND", 404, "Campaign was not found")
   }
 
+  return result.data
+}
+
+export async function listOwnedCampaigns(input: {
+  savedOnly?: boolean
+} = {}): Promise<CampaignRow[]> {
+  const { client, user } = await requireAuthenticatedUser()
+  let query = client
+    .from("campaigns")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("updated_at", { ascending: false })
+    .limit(50)
+  if (input.savedOnly) query = query.eq("is_saved", true)
+  const result = await query
+  if (result.error) {
+    throw new ApplicationError("DATABASE_ERROR", 500, "Unable to load campaign history")
+  }
+  return result.data
+}
+
+export async function updateCampaignSavedState(
+  campaignId: string,
+  isSaved: boolean
+): Promise<CampaignRow> {
+  const { client, user } = await requireAuthenticatedUser()
+  const result = await client
+    .from("campaigns")
+    .update({ is_saved: isSaved })
+    .eq("id", campaignId)
+    .eq("user_id", user.id)
+    .select("*")
+    .maybeSingle()
+  if (result.error || !result.data) {
+    throw new ApplicationError("CAMPAIGN_NOT_FOUND", 404, "Campaign was not found")
+  }
   return result.data
 }
 

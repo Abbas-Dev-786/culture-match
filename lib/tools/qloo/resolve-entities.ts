@@ -15,14 +15,15 @@ export interface ResolvedEntity {
 export async function resolveEntities(
   references: string[],
   client: QlooClient,
-  observedAt = new Date().toISOString()
+  observedAt = new Date().toISOString(),
+  types = "urn:entity:brand"
 ): Promise<ResolvedEntity[]> {
   const results: ResolvedEntity[] = []
 
   for (const reference of references) {
     const payload = await client.searchEntities({
       query: reference,
-      types: "urn:entity:brand",
+      types,
       take: 5,
     })
     const candidates = parseEntityCandidates(payload)

@@ -15,8 +15,12 @@ export const qlooTagSearchResponseSchema = z.object({
 
 export const qlooInsightsResponseSchema = z.object({
   results: z.object({
-    tags: z.array(jsonObjectSchema),
-  }),
+    tags: z.array(jsonObjectSchema).optional(),
+    entities: z.array(jsonObjectSchema).optional(),
+  }).refine(
+    (results) => results.tags !== undefined || results.entities !== undefined,
+    "Qloo insights results must contain tags or entities"
+  ),
   localities: jsonObjectSchema.optional(),
   query: jsonObjectSchema.optional(),
 })

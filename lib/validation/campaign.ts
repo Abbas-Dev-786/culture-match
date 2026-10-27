@@ -38,19 +38,21 @@ const targetMarketSchema = z
 export const campaignBriefSchema = z
   .object({
     brandName: nonEmptyText(120),
-    productCategory: nonEmptyText(120),
+    productCategory: nonEmptyText(240),
+    productDescription: nonEmptyText(1000),
     targetMarket: targetMarketSchema,
     objective: nonEmptyText(500),
     culturalReferences: z.array(nonEmptyText(120)).max(10),
     preferredLanguages: z.array(nonEmptyText(80)).max(8),
     minFollowers: z.number().int().nonnegative().max(1_000_000_000).optional(),
     maxFollowers: z.number().int().positive().max(1_000_000_000).optional(),
+    minBudget: z.number().finite().positive().max(1_000_000_000).optional(),
     maxBudget: z.number().finite().positive().max(1_000_000_000).optional(),
     currency: z.string().trim().regex(/^[A-Z]{3}$/).optional(),
     qlooAudienceIds: z.array(nonEmptyText(160)).max(10).optional(),
     qlooAudienceWeight: z.number().finite().positive().max(100).optional(),
     qlooAgeRange: z
-      .enum(["35_and_younger", "36_to_55", "55_and_older"])
+      .enum(["25_to_34", "35_and_younger", "36_to_55", "55_and_older"])
       .optional(),
     qlooGender: z.enum(["male", "female"]).optional(),
     creatorLimit: z.number().int().min(1).max(100),
@@ -75,6 +77,26 @@ export const campaignBriefSchema = z
         message: "Currency is required when a maximum budget is provided",
       })
     }
+
+    if (
+      brief.minBudget !== undefined &&
+      brief.maxBudget !== undefined &&
+      brief.minBudget > brief.maxBudget
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["minBudget"],
+        message: "Minimum budget cannot exceed maximum budget",
+      })
+    }
+
+    if (brief.minBudget !== undefined && !brief.currency) {
+      context.addIssue({
+        code: "custom",
+        path: ["currency"],
+        message: "Currency is required when a minimum budget is provided",
+      })
+    }
   })
 
 export const createCampaignRequestSchema = z.object({
@@ -83,5 +105,9 @@ export const createCampaignRequestSchema = z.object({
 })
 
 export const campaignIdSchema = z.string().uuid()
+
+export const campaignPreferenceSchema = z.object({
+  isSaved: z.boolean(),
+})
 
 export type CreateCampaignRequest = z.infer<typeof createCampaignRequestSchema>

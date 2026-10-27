@@ -1,6 +1,7 @@
 import type { EvidenceRef } from "../../domain/types.ts"
 import { ProviderError } from "../provider-errors.ts"
 import type { QlooClient } from "./client.ts"
+import { TAG_SEARCH_TYPES } from "./query-config.ts"
 
 export interface ResolvedTag {
   query: string
@@ -18,13 +19,43 @@ export async function resolveTags(
   observedAt = new Date().toISOString()
 ): Promise<ResolvedTag[]> {
   const results: ResolvedTag[] = []
-  for (const query of [...new Set(queries.map((value) => value.trim()).filter(Boolean))]) {
-    const payload = await client.searchTags({ query, take: 5 })
-    const candidates = parseTagCandidates(payload)
-    const exactMatches = candidates.filter(
-      (candidate) => normalize(candidate.name) === normalize(query)
+  for (const query of uniqueNonEmpty(queries)) {
+    const candidates = []
+    let exactMatches: Array<{ tagId: string; name: string; types: string[] }> =
+      []
+    for (const searchQuery of tagSearchQueries(query)) {
+      try {
+        const payload = await client.searchTags({
+          query: searchQuery,
+          tagTypes: TAG_SEARCH_TYPES,
+          take: 5,
+        })
+        const searchCandidates = parseTagCandidates(payload)
+        candidates.push(...searchCandidates)
+        if (exactMatches.length === 0) {
+          exactMatches = searchCandidates.filter(
+            (candidate) => normalize(candidate.name) === normalize(query)
+          )
+        }
+      } catch (error) {
+        if (
+          error instanceof ProviderError &&
+          [
+            "INVALID_PARAMETERS",
+            "EMPTY_RESULT",
+            "UPSTREAM_FAILURE",
+            "SCHEMA_MISMATCH",
+          ].includes(error.code)
+        ) {
+          continue
+        }
+        throw error
+      }
+    }
+    const uniqueCandidates = candidates.filter(
+      (candidate, index, all) =>
+        all.findIndex((item) => item.tagId === candidate.tagId) === index
     )
-
     if (exactMatches.length === 1) {
       const match = exactMatches[0]
       results.push({
@@ -33,7 +64,7 @@ export async function resolveTags(
         tagId: match.tagId,
         name: match.name,
         types: match.types,
-        candidates,
+        candidates: uniqueCandidates,
         evidence: {
           source: "qloo",
           fieldPath: "$.results[]",
@@ -46,13 +77,54 @@ export async function resolveTags(
       continue
     }
 
+    const semanticMatch = uniqueCandidates[0]
+    if (exactMatches.length === 0 && semanticMatch) {
+      results.push({
+        query,
+        status: "resolved",
+        tagId: semanticMatch.tagId,
+        name: semanticMatch.name,
+        types: semanticMatch.types,
+        candidates: uniqueCandidates,
+        evidence: {
+          source: "qloo",
+          fieldPath: "$.results[]",
+          observedAt,
+          verification: "provider_reported",
+          providerEntityId: semanticMatch.tagId,
+          excerpt: semanticMatch.name,
+        },
+      })
+      continue
+    }
+
     results.push({
       query,
       status: exactMatches.length > 1 ? "ambiguous" : "unresolved",
-      candidates,
+      candidates: uniqueCandidates,
     })
   }
   return results
+}
+
+export function expandTagQueries(queries: string[]): string[] {
+  const expanded = queries.flatMap((value) => {
+    const normalized = value
+      .trim()
+      .replace(/\beye[\s-]?wears?\b/gi, "eyewear")
+      .replace(/\b(?:generation|gen)\s*z\b/gi, "")
+      .replace(/\bgenz\b/gi, "")
+    if (!normalized || normalized.split(/\s+/).length <= 3) return [normalized]
+
+    return (
+      normalized
+        .match(/[\p{L}\p{N}]+/gu)
+        ?.filter(
+          (token) => !TAG_QUERY_STOP_WORDS.has(token.toLocaleLowerCase())
+        ) ?? []
+    )
+  })
+  return uniqueNonEmpty(expanded)
 }
 
 export function parseTagCandidates(
@@ -71,7 +143,9 @@ export function parseTagCandidates(
     ? payload.results
     : isRecord(payload.results) && Array.isArray(payload.results.tags)
       ? payload.results.tags
-      : undefined
+      : Array.isArray(payload.tags)
+        ? payload.tags
+        : undefined
   if (!resultItems) {
     throw new ProviderError({
       provider: "qloo",
@@ -84,15 +158,53 @@ export function parseTagCandidates(
   return resultItems.flatMap((value) => {
     if (!isRecord(value)) return []
     const tagId = readString(value.tag_id) ?? readString(value.id)
-    const name = readString(value.name)
+    const name = readString(value.name) ?? readString(value.title)
     const types = readStringArray(value.types ?? value.type)
-    if (!tagId || !name || types.length === 0) return []
+    if (!tagId || !name) return []
     return [{ tagId, name, types }]
   })
 }
 
 function normalize(value: string): string {
-  return value.trim().toLocaleLowerCase()
+  const canonical = value
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/\beye[\s-]?wears?\b/g, "eyewear")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+  if (canonical.endsWith("ies") && canonical.length > 4)
+    return `${canonical.slice(0, -3)}y`
+  if (canonical.endsWith("s") && canonical.length > 4)
+    return canonical.slice(0, -1)
+  return canonical
+}
+
+function tagSearchQueries(query: string): string[] {
+  const normalized = query.trim().toLocaleLowerCase()
+  const aliases: Record<string, string> = {
+    beaches: "beach",
+    parties: "party",
+    "eye-wears": "eyewear",
+    "eye wears": "eyewear",
+  }
+  return uniqueNonEmpty([query, aliases[normalized] ?? ""])
+}
+
+const TAG_QUERY_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "for",
+  "in",
+  "of",
+  "premium",
+  "the",
+  "to",
+  "with",
+])
+
+function uniqueNonEmpty(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

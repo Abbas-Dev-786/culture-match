@@ -1,6 +1,15 @@
 import type { CultureSignal, EvidenceRef } from "../../domain/types.ts"
 import { ProviderError } from "../provider-errors.ts"
 import type { QlooClient } from "./client.ts"
+import { TAG_SEARCH_TYPES } from "./query-config.ts"
+import { parseTagCandidates } from "./resolve-tags.ts"
+
+export interface EntityTagFallback {
+  tagId: string
+  name: string
+  types: string[]
+  evidence: EvidenceRef
+}
 
 export interface ResolvedEntity {
   reference: string
@@ -10,6 +19,7 @@ export interface ResolvedEntity {
   types?: string[]
   candidates: Array<{ entityId: string; name: string; types: string[] }>
   evidence?: EvidenceRef
+  tagFallback?: EntityTagFallback
 }
 
 export async function resolveEntities(
@@ -21,14 +31,44 @@ export async function resolveEntities(
   const results: ResolvedEntity[] = []
 
   for (const reference of references) {
-    const payload = await client.searchEntities({
-      query: reference,
-      types,
-      take: 5,
-    })
-    const candidates = parseEntityCandidates(payload)
-    const exactMatches = candidates.filter(
-      (candidate) => normalize(candidate.name) === normalize(reference)
+    const candidates = []
+    let exactMatches: Array<{
+      entityId: string
+      name: string
+      types: string[]
+    }> = []
+    for (const query of entitySearchQueries(reference)) {
+      try {
+        const payload = await client.searchEntities({
+          query,
+          types,
+          take: 5,
+        })
+        const searchCandidates = parseEntityCandidates(payload)
+        candidates.push(...searchCandidates)
+        if (exactMatches.length === 0) {
+          exactMatches = searchCandidates.filter(
+            (candidate) => normalize(candidate.name) === normalize(reference)
+          )
+        }
+      } catch (error) {
+        if (
+          error instanceof ProviderError &&
+          [
+            "INVALID_PARAMETERS",
+            "EMPTY_RESULT",
+            "UPSTREAM_FAILURE",
+            "SCHEMA_MISMATCH",
+          ].includes(error.code)
+        ) {
+          continue
+        }
+        throw error
+      }
+    }
+    const uniqueCandidates = candidates.filter(
+      (candidate, index, all) =>
+        all.findIndex((item) => item.entityId === candidate.entityId) === index
     )
 
     if (exactMatches.length === 1) {
@@ -39,7 +79,7 @@ export async function resolveEntities(
         entityId: match.entityId,
         name: match.name,
         types: match.types,
-        candidates,
+        candidates: uniqueCandidates,
         evidence: {
           source: "qloo",
           fieldPath: "$.results[].entity_id",
@@ -51,10 +91,12 @@ export async function resolveEntities(
       continue
     }
 
+    const tagFallback = await resolveTagFallback(reference, client, observedAt)
     results.push({
       reference,
       status: exactMatches.length > 1 ? "ambiguous" : "unresolved",
-      candidates,
+      candidates: uniqueCandidates,
+      ...(tagFallback ? { tagFallback } : {}),
     })
   }
 
@@ -64,7 +106,7 @@ export async function resolveEntities(
 export function parseEntityCandidates(
   payload: unknown
 ): Array<{ entityId: string; name: string; types: string[] }> {
-  if (!isRecord(payload) || !Array.isArray(payload.results)) {
+  if (!isRecord(payload)) {
     throw new ProviderError({
       provider: "qloo",
       code: "SCHEMA_MISMATCH",
@@ -73,18 +115,97 @@ export function parseEntityCandidates(
     })
   }
 
-  return payload.results.flatMap((value) => {
+  const resultItems = Array.isArray(payload.results)
+    ? payload.results
+    : isRecord(payload.results) && Array.isArray(payload.results.entities)
+      ? payload.results.entities
+      : undefined
+  if (!resultItems) {
+    throw new ProviderError({
+      provider: "qloo",
+      code: "SCHEMA_MISMATCH",
+      message: "Qloo entity search did not contain results",
+      retryable: false,
+    })
+  }
+
+  return resultItems.flatMap((value) => {
     if (!isRecord(value)) return []
     const entityId = readString(value.entity_id)
-    const name = readString(value.name)
+    const name = readString(value.name) ?? readString(value.title)
     const types = readStringArray(value.types)
     if (!entityId || !name || types.length === 0) return []
     return [{ entityId, name, types }]
   })
 }
 
+async function resolveTagFallback(
+  reference: string,
+  client: QlooClient,
+  observedAt: string
+): Promise<EntityTagFallback | undefined> {
+  try {
+    const payload = await client.searchTags({
+      query: reference,
+      tagTypes: TAG_SEARCH_TYPES,
+      take: 5,
+    })
+    const candidates = parseTagCandidates(payload)
+    const exactMatch = candidates.find(
+      (candidate) => normalizeTag(candidate.name) === normalizeTag(reference)
+    )
+    const match = exactMatch ?? candidates[0]
+    if (!match) return undefined
+    return {
+      tagId: match.tagId,
+      name: match.name,
+      types: match.types,
+      evidence: {
+        source: "qloo",
+        fieldPath: "$.results[]",
+        observedAt,
+        verification: exactMatch ? "verified" : "provider_reported",
+        providerEntityId: match.tagId,
+        excerpt: match.name,
+      },
+    }
+  } catch (error) {
+    if (
+      error instanceof ProviderError &&
+      [
+        "INVALID_PARAMETERS",
+        "EMPTY_RESULT",
+        "UPSTREAM_FAILURE",
+        "SCHEMA_MISMATCH",
+      ].includes(error.code)
+    )
+      return undefined
+    throw error
+  }
+}
+
+function normalizeTag(value: string): string {
+  return value
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/\beye[\s-]?wears?\b/g, "eyewear")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(/ies$/, "y")
+    .replace(/s$/, "")
+}
+
 function normalize(value: string): string {
-  return value.trim().toLocaleLowerCase()
+  return value
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+}
+
+function entitySearchQueries(reference: string): string[] {
+  const queries = [reference]
+  if (normalize(reference) === "rayban") queries.push("Ray-Ban")
+  return [...new Set(queries)]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

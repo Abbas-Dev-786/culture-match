@@ -1,10 +1,11 @@
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 import test from "node:test"
-import { analyzeCulture } from "./analyze-culture.ts"
+import { analyzeCulture, getTagOperator } from "./analyze-culture.ts"
 import { createQlooClient, serializeQlooAgeRange } from "./client.ts"
 import { enrichCreatorsWithQloo } from "./enrich-creators.ts"
 import { resolveEntities } from "./resolve-entities.ts"
+import { expandTagQueries, resolveTags } from "./resolve-tags.ts"
 import type { CampaignBrief } from "../../domain/types.ts"
 import { ProviderError } from "../provider-errors.ts"
 import { parseTrendingEntities } from "./trending.ts"
@@ -97,33 +98,209 @@ test("Qloo keeps unresolved references explicit", async () => {
   assert.deepEqual(resolved[0]?.candidates, [])
 })
 
-test("Qloo includes resolved reference entities in the Insights signal", async () => {
-  let insightsBody: Record<string, unknown> | undefined
+test("Qloo falls back to a scoped tag when entity resolution has no match", async () => {
+  const requests: string[] = []
+  const client = createQlooClient({
+    baseUrl: "https://qloo.test",
+    searchUrl: "https://qloo.test/search",
+    insightsUrl: "https://qloo.test/v2/insights",
+    tagsUrl: "https://qloo.test/v2/tags",
+    apiKey: "test-key",
+    fetchImpl: async (input) => {
+      requests.push(input)
+      if (input.includes("/search"))
+        return new Response(JSON.stringify({ results: [] }), { status: 200 })
+      return new Response(
+        JSON.stringify({
+          tags: [{ id: "urn:tag:style:qloo:eyewear", title: "Eyewear" }],
+        }),
+        { status: 200 }
+      )
+    },
+  })
+
+  const [resolved] = await resolveEntities(["Eyewear"], client)
+  assert.equal(resolved?.status, "unresolved")
+  assert.equal(resolved?.tagFallback?.tagId, "urn:tag:style:qloo:eyewear")
+  assert.equal(resolved?.tagFallback?.name, "Eyewear")
+  assert.match(requests[1] ?? "", /filter\.query=Eyewear/)
+  assert.match(requests[1] ?? "", /filter\.tag\.types=/)
+})
+
+test("Qloo resolves punctuation variants such as Rayban to Ray-Ban", async () => {
   const client = createQlooClient({
     baseUrl: "https://qloo.test",
     searchUrl: "https://qloo.test/search",
     insightsUrl: "https://qloo.test/v2/insights",
     apiKey: "test-key",
     fetchImpl: async (input) => {
+      const query = new URL(input).searchParams.get("query")
+      return new Response(
+        JSON.stringify({
+          results:
+            query === "Ray-Ban"
+              ? [
+                  {
+                    entity_id: "ray-ban-id",
+                    name: "Ray-Ban",
+                    types: ["urn:entity:brand"],
+                  },
+                ]
+              : [],
+        }),
+        { status: 200 }
+      )
+    },
+  })
+
+  const [resolved] = await resolveEntities(["Rayban"], client)
+  assert.equal(resolved?.status, "resolved")
+  assert.equal(resolved?.entityId, "ray-ban-id")
+})
+
+test("Qloo normalizes generic references through tag aliases", async () => {
+  const searched: string[] = []
+  const client = createQlooClient({
+    baseUrl: "https://qloo.test",
+    searchUrl: "https://qloo.test/search",
+    insightsUrl: "https://qloo.test/v2/insights",
+    apiKey: "test-key",
+    fetchImpl: async (input) => {
+      const url = new URL(input)
+      const query = url.searchParams.get("filter.query") ?? ""
+      searched.push(query)
+      const names: Record<string, string> = {
+        beach: "Beach",
+        party: "Party",
+        eyewear: "Eyewear",
+      }
+      return new Response(
+        JSON.stringify({
+          results: {
+            tags: [
+              {
+                tag_id: `urn:tag:test:${query}`,
+                name: names[query] ?? query,
+              },
+            ],
+          },
+        }),
+        { status: 200 }
+      )
+    },
+  })
+
+  const resolved = await resolveTags(
+    ["beaches", "parties", "eye-wears"],
+    client
+  )
+  assert.deepEqual(
+    resolved.map((tag) => tag.status),
+    ["resolved", "resolved", "resolved"]
+  )
+  assert.deepEqual(
+    expandTagQueries(["Premium sunglasses and eye-wears for genz"]),
+    ["sunglasses", "eyewear"]
+  )
+  assert.ok(searched.includes("beach"))
+  assert.ok(searched.includes("party"))
+  assert.ok(searched.includes("eyewear"))
+})
+
+test("Qloo accepts the ranked semantic tag result when no exact label exists", async () => {
+  const client = createQlooClient({
+    baseUrl: "https://qloo.test",
+    searchUrl: "https://qloo.test/search",
+    insightsUrl: "https://qloo.test/v2/insights",
+    tagsUrl: "https://qloo.test/v2/tags",
+    apiKey: "test-key",
+    fetchImpl: async (input) => {
+      if (input.includes("/tags"))
+        return new Response(
+          JSON.stringify({
+            tags: [
+              { id: "urn:tag:lifestyle:qloo:nightlife", title: "Nightlife" },
+              { id: "urn:tag:lifestyle:qloo:dining", title: "Dining" },
+            ],
+          }),
+          { status: 200 }
+        )
+      return new Response(JSON.stringify({ results: [] }), { status: 200 })
+    },
+  })
+
+  const [resolved] = await resolveTags(["parties"], client)
+  assert.equal(resolved?.status, "resolved")
+  assert.equal(resolved?.tagId, "urn:tag:lifestyle:qloo:nightlife")
+})
+
+test("Qloo uses a permissive operator for sparse tag resolution", () => {
+  assert.equal(getTagOperator(0), "union")
+  assert.equal(getTagOperator(2), "union")
+  assert.equal(getTagOperator(4), "union")
+  assert.equal(getTagOperator(5), "intersection")
+})
+
+test("Qloo uses GET scalar weights and POST per-entity weights", async () => {
+  const requests: Array<{ method: string; url: URL; body: unknown }> = []
+  const client = createQlooClient({
+    baseUrl: "https://qloo.test",
+    searchUrl: "https://qloo.test/search",
+    insightsUrl: "https://qloo.test/v2/insights",
+    apiKey: "test-key",
+    fetchImpl: async (input, init) => {
       if (input.includes("/search")) {
         return new Response(JSON.stringify(entityFixture), { status: 200 })
       }
       if (input.includes("/tags")) {
         return new Response(JSON.stringify(tagFixture), { status: 200 })
       }
-      insightsBody = Object.fromEntries(new URL(input).searchParams.entries())
+      const requestUrl = new URL(input)
+      const requestBody = init?.body
+        ? (JSON.parse(String(init.body)) as unknown)
+        : undefined
+      requests.push({
+        method: init?.method ?? "GET",
+        url: requestUrl,
+        body: requestBody,
+      })
       return new Response(JSON.stringify(tasteFixture), { status: 200 })
     },
   })
 
   await analyzeCulture(brief, client)
+  await client.getInsights({
+    filterType: "urn:tag",
+    entitySignals: [
+      { id: "brand-1", weight: 30 },
+      { id: "reference-1", weight: 20 },
+    ],
+    take: 10,
+  })
+  const weightedGet = requests.find(
+    (request) =>
+      request.method === "GET" &&
+      request.url.searchParams.has("signal.interests.entities")
+  )
   assert.equal(
-    insightsBody?.["signal.interests.entities"],
+    weightedGet?.url.searchParams.get("signal.interests.entities"),
     "C70CE2B8-0AD1-4150-BF18-5A6347F2E860"
   )
-  assert.equal(insightsBody?.["signal.interests.entities.weights"], "30")
-  assert.equal(insightsBody?.["operator.signal.interests.tags"], "intersection")
-  assert.equal(insightsBody?.["feature.explainability"], "true")
+  assert.equal(
+    weightedGet?.url.searchParams.get("signal.interests.entities.weight"),
+    "30"
+  )
+  const weightedPost = requests.find((request) => request.method === "POST")
+  assert.ok(weightedPost)
+  assert.deepEqual(
+    (weightedPost?.body as Record<string, unknown>)[
+      "signal.interests.entities"
+    ],
+    [
+      { entity: "brand-1", weight: 30 },
+      { entity: "reference-1", weight: 20 },
+    ]
+  )
 })
 
 test("Qloo enriches creator content with location-conditioned affinity", async () => {
@@ -163,20 +340,28 @@ test("Qloo enriches creator content with location-conditioned affinity", async (
     "India",
     client
   )
-  assert.equal(creator.qlooSignals?.[0]?.signalId, "urn:tag:category:streetwear")
+  assert.equal(
+    creator.qlooSignals?.[0]?.signalId,
+    "urn:tag:category:streetwear"
+  )
   assert.equal(creator.qlooSignals?.[0]?.affinity, 0.92)
 })
 
 test("Qloo validates creators from the documented person insight response", async () => {
+  let personRequestUrl: URL | undefined
+  let personRequestMethod: string | undefined
+  let personRequestBody: Record<string, unknown> | undefined
   const personPayload = {
     results: {
-      entities: [{
-        entity_id: "person-1",
-        name: "Urban Streetwear",
-        affinity: 0.91,
-        popularity: 0.87,
-        tags: [{ id: "urn:tag:genre:person:influencer", name: "Influencer" }],
-      }],
+      entities: [
+        {
+          entity_id: "person-1",
+          name: "Urban Streetwear",
+          affinity: 0.91,
+          popularity: 0.87,
+          tags: [{ id: "urn:tag:genre:person:influencer", name: "Influencer" }],
+        },
+      ],
     },
   }
   const client = createQlooClient({
@@ -184,10 +369,20 @@ test("Qloo validates creators from the documented person insight response", asyn
     searchUrl: "https://qloo.test/search",
     insightsUrl: "https://qloo.test/v2/insights",
     apiKey: "test-key",
-    fetchImpl: async (input) => {
+    fetchImpl: async (input, init) => {
       const url = new URL(input)
-      if (url.searchParams.get("filter.type") === "urn:entity:person")
+      const body = init?.body
+        ? (JSON.parse(String(init.body)) as Record<string, unknown>)
+        : undefined
+      if (
+        url.searchParams.get("filter.type") === "urn:entity:person" ||
+        body?.["filter.type"] === "urn:entity:person"
+      ) {
+        personRequestUrl = url
+        personRequestMethod = init?.method ?? "GET"
+        personRequestBody = body
         return new Response(JSON.stringify(personPayload), { status: 200 })
+      }
       if (input.includes("/tags"))
         return new Response(JSON.stringify(tagFixture), { status: 200 })
       return new Response(JSON.stringify(tagAffinityFixture), { status: 200 })
@@ -200,22 +395,34 @@ test("Qloo validates creators from the documented person insight response", asyn
     verification: "provider_reported" as const,
   }
   const [creator] = await enrichCreatorsWithQloo(
-    [{
-      provider: "apify",
-      providerCreatorId: "creator-person-1",
-      name: "Urban Streetwear",
-      platform: "instagram",
-      contentSignals: [],
-      missingFields: [],
-      sourceFields: {},
-      evidence: [evidence],
-    }],
+    [
+      {
+        provider: "apify",
+        providerCreatorId: "creator-person-1",
+        name: "Urban Streetwear",
+        platform: "instagram",
+        contentSignals: [],
+        missingFields: [],
+        sourceFields: {},
+        evidence: [evidence],
+      },
+    ],
     "Berlin",
     client
   )
   assert.equal(creator.qlooEntityId, "person-1")
   assert.equal(creator.qlooAffinity, 0.91)
   assert.equal(creator.qlooPopularity, 0.87)
+  assert.equal(personRequestMethod, "POST")
+  assert.equal(
+    personRequestBody?.["filter.results.entities.query"],
+    "Urban Streetwear"
+  )
+  assert.equal(personRequestBody?.["bias.trends"], "high")
+  assert.equal(personRequestBody?.["signal.demographics.age"], undefined)
+  assert.equal(personRequestBody?.["signal.location.query"], undefined)
+  assert.equal(personRequestUrl?.searchParams.has("filter.type"), false)
+  assert.equal(personRequestBody?.["filter.type"], "urn:entity:person")
 })
 
 test("Qloo exposes documented comparison and heatmap request contracts", async () => {
@@ -228,11 +435,12 @@ test("Qloo exposes documented comparison and heatmap request contracts", async (
     apiKey: "test-key",
     fetchImpl: async (input) => {
       requests.push(input)
-      return new Response(JSON.stringify({ results: { tags: [] } }), { status: 200 })
+      return new Response(JSON.stringify({ results: { tags: [] } }), {
+        status: 200,
+      })
     },
   })
   await client.compareInsights({
-    filterType: "urn:tag",
     groupAEntityIds: ["brand-1"],
     groupBEntityIds: ["reference-1", "reference-2"],
     locationQuery: "India",
@@ -246,7 +454,11 @@ test("Qloo exposes documented comparison and heatmap request contracts", async (
     gender: "female",
   })
   assert.match(requests[0] ?? "", /a\.signal\.interests\.entities=brand-1/)
-  assert.match(requests[0] ?? "", /b\.signal\.interests\.entities=reference-1%2Creference-2/)
+  assert.match(
+    requests[0] ?? "",
+    /b\.signal\.interests\.entities=reference-1%2Creference-2/
+  )
+  assert.doesNotMatch(requests[0] ?? "", /filter\.type=/)
   assert.match(requests[1] ?? "", /filter\.type=urn%3Aheatmap/)
   assert.match(requests[1] ?? "", /output\.heatmap\.boundary=city/)
   assert.match(requests[1] ?? "", /signal\.demographics\.gender=female/)
@@ -262,7 +474,9 @@ test("Qloo uses the tag filter query and omits tag operators without tags", asyn
     apiKey: "test-key",
     fetchImpl: async (input) => {
       requests.push(input)
-      return new Response(JSON.stringify({ results: { tags: [] } }), { status: 200 })
+      return new Response(JSON.stringify({ results: { tags: [] } }), {
+        status: 200,
+      })
     },
   })
 
@@ -274,7 +488,9 @@ test("Qloo uses the tag filter query and omits tag operators without tags", asyn
     take: 10,
   })
 
-  assert.match(requests[0] ?? "", /query=streetwear/)
+  assert.match(requests[0] ?? "", /filter\.query=streetwear/)
+  assert.match(requests[0] ?? "", /feature\.typo_tolerance=true/)
+  assert.match(requests[0] ?? "", /feature\.semantic_search=true/)
   assert.doesNotMatch(requests[1] ?? "", /operator\.signal\.interests\.tags/)
 })
 
@@ -287,7 +503,9 @@ test("Qloo serializes audience conditioning as a comma-separated signal", async 
     apiKey: "test-key",
     fetchImpl: async (input) => {
       requestUrl = new URL(input)
-      return new Response(JSON.stringify({ results: { tags: [] } }), { status: 200 })
+      return new Response(JSON.stringify({ results: { tags: [] } }), {
+        status: 200,
+      })
     },
   })
 
@@ -314,7 +532,9 @@ test("Qloo expands the legacy 25 to 34 campaign range into valid age buckets", a
     apiKey: "test-key",
     fetchImpl: async (input) => {
       requestUrl = new URL(input)
-      return new Response(JSON.stringify({ results: { tags: [] } }), { status: 200 })
+      return new Response(JSON.stringify({ results: { tags: [] } }), {
+        status: 200,
+      })
     },
   })
 
@@ -344,14 +564,16 @@ test("Qloo parses trending public-entity metrics without inventing social fields
       ],
     },
   })
-  assert.deepEqual(entities, [{
-    entityId: "person-1",
-    name: "Public Figure",
-    types: ["urn:entity:person"],
-    trendScore: 0.82,
-    affinity: 0.74,
-    popularity: 0.61,
-  }])
+  assert.deepEqual(entities, [
+    {
+      entityId: "person-1",
+      name: "Public Figure",
+      types: ["urn:entity:person"],
+      trendScore: 0.82,
+      affinity: 0.74,
+      popularity: 0.61,
+    },
+  ])
 })
 
 test("Qloo classifies rate limits, schema mismatches, and empty signals", async () => {

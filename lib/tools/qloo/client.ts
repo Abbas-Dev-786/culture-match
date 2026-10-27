@@ -24,6 +24,7 @@ export interface QlooWeightedTag {
 
 export interface QlooInsightsInput {
   filterType: string
+  requestMethod?: "GET" | "POST"
   locationQuery?: string
   locationId?: string
   entitySignals?: QlooWeightedEntity[]
@@ -31,16 +32,28 @@ export interface QlooInsightsInput {
   tagOperator?: "union" | "intersection"
   audienceIds?: string[]
   audienceWeight?: number
-  ageRange?: "25_to_34" | "35_and_younger" | "36_to_55" | "55_and_older"
+  ageRange?:
+    | "24_and_younger"
+    | "25_to_29"
+    | "25_to_34"
+    | "30_to_34"
+    | "35_and_younger"
+    | "35_to_44"
+    | "45_to_54"
+    | "36_to_55"
+    | "55_and_older"
   gender?: "male" | "female"
   filterTags?: string[]
+  tagTypes?: string[]
+  filterResultsEntitiesQuery?: string
+  biasTrends?: "low" | "medium" | "high"
   popularityMin?: number
   take: number
   explainability?: boolean
 }
 
 export interface QlooComparisonInput {
-  filterType: string
+  filterType?: string
   groupAEntityIds: string[]
   groupBEntityIds: string[]
   locationQuery?: string
@@ -54,7 +67,16 @@ export interface QlooHeatmapInput {
   tagIds?: string[]
   audienceIds?: string[]
   audienceWeight?: number
-  ageRange?: "25_to_34" | "35_and_younger" | "36_to_55" | "55_and_older"
+  ageRange?:
+    | "24_and_younger"
+    | "25_to_29"
+    | "25_to_34"
+    | "30_to_34"
+    | "35_and_younger"
+    | "35_to_44"
+    | "45_to_54"
+    | "36_to_55"
+    | "55_and_older"
   gender?: "male" | "female"
   take?: number
 }
@@ -65,7 +87,11 @@ export interface QlooClient {
     types: string
     take: number
   }): Promise<unknown>
-  searchTags(input: { query: string; take: number }): Promise<unknown>
+  searchTags(input: {
+    query: string
+    take: number
+    tagTypes?: string[]
+  }): Promise<unknown>
   getInsights(input: QlooInsightsInput): Promise<unknown>
   compareInsights(input: QlooComparisonInput): Promise<unknown>
   getHeatmap(input: QlooHeatmapInput): Promise<unknown>
@@ -124,7 +150,11 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
     },
     async searchTags(input) {
       const url = new URL(config.tagsUrl)
-      url.searchParams.set("query", input.query)
+      url.searchParams.set("filter.query", input.query)
+      url.searchParams.set("feature.typo_tolerance", "true")
+      url.searchParams.set("feature.semantic_search", "true")
+      if (input.tagTypes && input.tagTypes.length > 0)
+        url.searchParams.set("filter.tag.types", input.tagTypes.join(","))
       url.searchParams.set("take", String(input.take))
       return requestProviderJson(
         fetchImpl,
@@ -139,7 +169,9 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
     },
     async getInsights(input) {
       const url = new URL(config.insightsUrl)
-      setInsightsParams(url, input)
+      const usePost =
+        input.requestMethod === "POST" || requiresWeightedPost(input)
+      if (!usePost) setInsightsParams(url, input)
       return requestProviderJson(
         fetchImpl,
         url,
@@ -147,7 +179,13 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
         config.timeoutMs,
         "qloo",
         qlooInsightsResponseSchema,
-        {},
+        usePost
+          ? {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(buildInsightsBody(input)),
+            }
+          : {},
         QLOO_INSIGHTS_CACHE_TTL_MS
       )
     },
@@ -161,10 +199,12 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
         "b.signal.interests.entities",
         input.groupBEntityIds.join(",")
       )
-      url.searchParams.set("filter.type", input.filterType)
+      if (input.filterType)
+        url.searchParams.set("filter.type", input.filterType)
       if (input.locationQuery)
         url.searchParams.set("filter.location.query", input.locationQuery)
-      if (input.take !== undefined) url.searchParams.set("take", String(input.take))
+      if (input.take !== undefined)
+        url.searchParams.set("take", String(input.take))
       return requestProviderJson(
         fetchImpl,
         url,
@@ -185,7 +225,10 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
         input.boundary ?? "geohash"
       )
       if (input.entityIds && input.entityIds.length > 0)
-        url.searchParams.set("signal.interests.entities", input.entityIds.join(","))
+        url.searchParams.set(
+          "signal.interests.entities",
+          input.entityIds.join(",")
+        )
       if (input.tagIds && input.tagIds.length > 0)
         url.searchParams.set("signal.interests.tags", input.tagIds.join(","))
       if (input.audienceIds && input.audienceIds.length > 0)
@@ -205,7 +248,8 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
         )
       if (input.gender)
         url.searchParams.set("signal.demographics.gender", input.gender)
-      if (input.take !== undefined) url.searchParams.set("take", String(input.take))
+      if (input.take !== undefined)
+        url.searchParams.set("take", String(input.take))
       return requestProviderJson(
         fetchImpl,
         url,
@@ -316,8 +360,8 @@ function readQlooConfig(options: QlooClientOptions): {
     parsedSearch.origin !== parsedBase.origin ||
     parsedInsights.origin !== parsedBase.origin ||
     parsedCompare.origin !== parsedBase.origin ||
-    parsedTags.origin !== parsedBase.origin
-    || parsedTrends.origin !== parsedBase.origin
+    parsedTags.origin !== parsedBase.origin ||
+    parsedTrends.origin !== parsedBase.origin
   ) {
     throw new ProviderError({
       provider: "qloo",
@@ -347,41 +391,54 @@ function setInsightsParams(url: URL, input: QlooInsightsInput): void {
   url.searchParams.set("take", String(input.take))
   if (input.filterTags && input.filterTags.length > 0)
     url.searchParams.set("filter.tags", input.filterTags.join(","))
+  if (input.tagTypes && input.tagTypes.length > 0)
+    url.searchParams.set("filter.tag.types", input.tagTypes.join(","))
+  if (input.filterResultsEntitiesQuery)
+    url.searchParams.set(
+      "filter.results.entities.query",
+      input.filterResultsEntitiesQuery
+    )
+  if (input.biasTrends) url.searchParams.set("bias.trends", input.biasTrends)
   if (input.popularityMin !== undefined)
     url.searchParams.set("filter.popularity.min", String(input.popularityMin))
-  if (input.locationQuery)
+  if (input.locationQuery && input.filterType !== "urn:entity:person")
     url.searchParams.set("signal.location.query", input.locationQuery)
-  if (input.locationId) url.searchParams.set("signal.location", input.locationId)
+  if (input.locationId)
+    url.searchParams.set("signal.location", input.locationId)
   if (input.entitySignals && input.entitySignals.length > 0) {
     url.searchParams.set(
       "signal.interests.entities",
       input.entitySignals.map((signal) => signal.id).join(",")
     )
-    const weights = input.entitySignals.map((signal) => signal.weight).filter((weight): weight is number => weight !== undefined)
-    if (weights.length > 0)
-      url.searchParams.set("signal.interests.entities.weights", weights.join(","))
+    const weight = sharedWeight(input.entitySignals)
+    if (weight !== undefined)
+      url.searchParams.set("signal.interests.entities.weight", String(weight))
   }
   if (input.tagSignals && input.tagSignals.length > 0) {
     url.searchParams.set(
       "signal.interests.tags",
       input.tagSignals.map((signal) => signal.tag).join(",")
     )
-    const weights = input.tagSignals.map((signal) => signal.weight).filter((weight): weight is number => weight !== undefined)
-    if (weights.length > 0)
-      url.searchParams.set("signal.interests.tags.weights", weights.join(","))
   }
   if (input.tagOperator && input.tagSignals && input.tagSignals.length > 0)
     url.searchParams.set("operator.signal.interests.tags", input.tagOperator)
   if (input.audienceIds && input.audienceIds.length > 0)
-    url.searchParams.set("signal.demographics.audiences", input.audienceIds.join(","))
+    url.searchParams.set(
+      "signal.demographics.audiences",
+      input.audienceIds.join(",")
+    )
   if (input.audienceWeight !== undefined)
-    url.searchParams.set("signal.demographics.audiences.weight", String(input.audienceWeight))
+    url.searchParams.set(
+      "signal.demographics.audiences.weight",
+      String(input.audienceWeight)
+    )
   if (input.ageRange)
     url.searchParams.set(
       "signal.demographics.age",
       serializeQlooAgeRange(input.ageRange)
     )
-  if (input.gender) url.searchParams.set("signal.demographics.gender", input.gender)
+  if (input.gender)
+    url.searchParams.set("signal.demographics.gender", input.gender)
   if (input.explainability !== undefined)
     url.searchParams.set("feature.explainability", String(input.explainability))
 }
@@ -391,6 +448,70 @@ export function serializeQlooAgeRange(
 ): string {
   if (ageRange === "25_to_34") return "25_to_29,30_to_34"
   return ageRange
+}
+
+function requiresWeightedPost(input: QlooInsightsInput): boolean {
+  return hasDistinctWeights(input.entitySignals)
+}
+
+function hasDistinctWeights(
+  signals: QlooWeightedEntity[] | QlooWeightedTag[] | undefined
+): boolean {
+  if (!signals || signals.length === 0) return false
+  const weights = signals.map((signal) => signal.weight)
+  return (
+    weights.every((weight): weight is number => weight !== undefined) &&
+    new Set(weights).size > 1
+  )
+}
+
+function sharedWeight(signals: QlooWeightedEntity[]): number | undefined {
+  const weights = signals.map((signal) => signal.weight)
+  if (
+    weights.length === 0 ||
+    !weights.every((weight): weight is number => weight !== undefined) ||
+    new Set(weights).size !== 1
+  )
+    return undefined
+  return weights[0]
+}
+
+function buildInsightsBody(input: QlooInsightsInput): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    "filter.type": input.filterType,
+    take: input.take,
+  }
+  if (input.filterTags && input.filterTags.length > 0)
+    body["filter.tags"] = input.filterTags
+  if (input.tagTypes && input.tagTypes.length > 0)
+    body["filter.tag.types"] = input.tagTypes
+  if (input.filterResultsEntitiesQuery)
+    body["filter.results.entities.query"] = input.filterResultsEntitiesQuery
+  if (input.biasTrends) body["bias.trends"] = input.biasTrends
+  if (input.popularityMin !== undefined)
+    body["filter.popularity.min"] = input.popularityMin
+  if (input.locationQuery && input.filterType !== "urn:entity:person")
+    body["signal.location.query"] = input.locationQuery
+  if (input.locationId) body["signal.location"] = input.locationId
+  if (input.entitySignals && input.entitySignals.length > 0)
+    body["signal.interests.entities"] = input.entitySignals.map((signal) => ({
+      entity: signal.id,
+      ...(signal.weight !== undefined ? { weight: signal.weight } : {}),
+    }))
+  if (input.tagSignals && input.tagSignals.length > 0)
+    body["signal.interests.tags"] = input.tagSignals.map((signal) => signal.tag)
+  if (input.tagOperator)
+    body["operator.signal.interests.tags"] = input.tagOperator
+  if (input.audienceIds && input.audienceIds.length > 0)
+    body["signal.demographics.audiences"] = input.audienceIds
+  if (input.audienceWeight !== undefined)
+    body["signal.demographics.audiences.weight"] = input.audienceWeight
+  if (input.ageRange)
+    body["signal.demographics.age"] = serializeQlooAgeRange(input.ageRange)
+  if (input.gender) body["signal.demographics.gender"] = input.gender
+  if (input.explainability !== undefined)
+    body["feature.explainability"] = input.explainability
+  return body
 }
 
 function parseProviderUrl(value: string, label: string): URL {

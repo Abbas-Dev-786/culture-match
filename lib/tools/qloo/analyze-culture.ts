@@ -10,11 +10,13 @@ import type {
 } from "../../domain/types.ts"
 import { ProviderError } from "../provider-errors.ts"
 import type { QlooClient } from "./client.ts"
+import { resolveEntities, type ResolvedEntity } from "./resolve-entities.ts"
 import {
-  resolveEntities,
-  type ResolvedEntity,
-} from "./resolve-entities.ts"
-import { resolveTags, type ResolvedTag } from "./resolve-tags.ts"
+  expandTagQueries,
+  resolveTags,
+  type ResolvedTag,
+} from "./resolve-tags.ts"
+import { CULTURAL_TAG_TYPES, MARKET_TAG_TYPES } from "./query-config.ts"
 
 export interface CultureResearchResult {
   signals: CultureSignal[]
@@ -40,11 +42,35 @@ export async function analyzeCulture(
     client,
     observedAt
   )
-  const resolvedTags = await resolveTagsWithFallback(
-    [brief.productCategory, brief.productDescription, ...brief.culturalReferences].filter((value) => value.trim()),
+  const resolvedReferenceNames = new Set(
+    resolvedReferences
+      .filter((reference) => reference.status === "resolved")
+      .map((reference) => reference.reference)
+  )
+  const tagFallbackReferences = new Set(
+    resolvedReferences
+      .filter((reference) => reference.tagFallback)
+      .map((reference) => reference.reference)
+  )
+  const fallbackTags = resolvedReferences.flatMap((reference) =>
+    reference.tagFallback
+      ? [tagFallbackToResolvedTag(reference.reference, reference.tagFallback)]
+      : []
+  )
+  const searchedTags = await resolveTagsWithFallback(
+    expandTagQueries([
+      brief.productCategory,
+      brief.productDescription,
+      ...brief.culturalReferences.filter(
+        (reference) =>
+          !resolvedReferenceNames.has(reference) &&
+          !tagFallbackReferences.has(reference)
+      ),
+    ]),
     client,
     observedAt
   )
+  const resolvedTags = mergeResolvedTags(fallbackTags, searchedTags)
   const locationQuery = buildLocationQuery(brief)
   const layers = await loadFingerprintLayers(
     brief,
@@ -65,11 +91,16 @@ export async function analyzeCulture(
     const fallbackPayload = await client.getInsights({
       filterType: "urn:tag",
       locationQuery,
+      tagTypes: MARKET_TAG_TYPES,
       popularityMin: 0.9,
       take: readTake(),
       explainability: true,
     })
-    const fallbackParsed = parseTasteResponse(fallbackPayload, observedAt, "market")
+    const fallbackParsed = parseTasteResponse(
+      fallbackPayload,
+      observedAt,
+      "market"
+    )
     const fallbackLayer: FingerprintLayerResult = {
       group: "market",
       label: "Popular market fallback",
@@ -134,6 +165,15 @@ export async function analyzeCulture(
             status: entity.status,
             ...(entity.entityId ? { entityId: entity.entityId } : {}),
             ...(entity.name ? { name: entity.name } : {}),
+            ...(entity.tagFallback
+              ? {
+                  tagFallback: {
+                    tagId: entity.tagFallback.tagId,
+                    name: entity.tagFallback.name,
+                    types: entity.tagFallback.types,
+                  },
+                }
+              : {}),
             candidates: entity.candidates.map((candidate) => ({
               entityId: candidate.entityId,
               name: candidate.name,
@@ -163,10 +203,21 @@ export async function analyzeCulture(
         status: entity.status,
         entityId: entity.entityId ?? null,
         name: entity.name ?? null,
+        tagFallback: entity.tagFallback
+          ? {
+              tagId: entity.tagFallback.tagId,
+              name: entity.tagFallback.name,
+              types: entity.tagFallback.types,
+            }
+          : null,
         candidates: entity.candidates,
       })),
       unresolvedReferences: resolvedReferences
-        .filter((entity) => entity.status !== "resolved")
+        .filter(
+          (entity) =>
+            entity.status !== "resolved" &&
+            !isCoveredByResolvedTag(entity.reference, resolvedTags)
+        )
         .map((entity) => entity.reference),
       resolvedTags: resolvedTags.map(resolvedTagToJson),
       signalCount: signals.length,
@@ -179,7 +230,9 @@ export async function analyzeCulture(
         filterType: "urn:tag",
         locationQuery,
         layerCount: layers.length,
-        tagOperator: "intersection",
+        tagOperator:
+          layers.find((layer) => layer.group === "combined")?.operator ??
+          "union",
         audienceIds: brief.qlooAudienceIds ?? [],
         audienceWeight: brief.qlooAudienceWeight ?? null,
         ageRange: brief.qlooAgeRange ?? null,
@@ -190,6 +243,40 @@ export async function analyzeCulture(
     },
     ...(rawPayload ? { rawPayload } : {}),
   }
+}
+
+function tagFallbackToResolvedTag(
+  query: string,
+  fallback: NonNullable<ResolvedEntity["tagFallback"]>
+): ResolvedTag {
+  return {
+    query,
+    status: "resolved",
+    tagId: fallback.tagId,
+    name: fallback.name,
+    types: fallback.types,
+    candidates: [
+      {
+        tagId: fallback.tagId,
+        name: fallback.name,
+        types: fallback.types,
+      },
+    ],
+    evidence: fallback.evidence,
+  }
+}
+
+function mergeResolvedTags(
+  primary: ResolvedTag[],
+  secondary: ResolvedTag[]
+): ResolvedTag[] {
+  const seen = new Set<string>()
+  return [...primary, ...secondary].filter((tag) => {
+    const key = tag.tagId ?? `query:${tag.query}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 async function resolveTagsWithFallback(
@@ -232,6 +319,7 @@ interface LayerSpec {
   label: string
   entitySignals: Array<{ id: string; weight: number }>
   tagSignals: Array<{ tag: string; weight: number }>
+  tagTypes: string[]
   operator?: "union" | "intersection"
   unresolvedInputs: string[]
 }
@@ -244,10 +332,15 @@ async function loadFingerprintLayers(
   client: QlooClient,
   observedAt: string
 ): Promise<FingerprintLayerResult[]> {
-  const brand = references.find((reference) => reference.reference === brief.brandName)
+  const brand = references.find(
+    (reference) => reference.reference === brief.brandName
+  )
   const referenceEntities = references.filter(
     (reference) => reference.reference !== brief.brandName
   )
+  const unresolvedReference = (reference: ResolvedEntity) =>
+    reference.status !== "resolved" &&
+    !isCoveredByResolvedTag(reference.reference, tags)
   const entitySignalsFor = (entities: ResolvedEntity[], weight: number) =>
     entities.flatMap((entity) =>
       entity.status === "resolved" && entity.entityId
@@ -259,9 +352,13 @@ async function loadFingerprintLayers(
       ? [{ tag: tag.tagId, weight: 15 }]
       : []
   )
-  const unresolved = (items: Array<{ status: string; query?: string; reference?: string }>) =>
+  const unresolved = (
+    items: Array<{ status: string; query?: string; reference?: string }>
+  ) =>
     items.flatMap((item) =>
-      item.status === "resolved" ? [] : [item.query ?? item.reference ?? "unknown"]
+      item.status === "resolved"
+        ? []
+        : [item.query ?? item.reference ?? "unknown"]
     )
   const specs: LayerSpec[] = [
     {
@@ -269,6 +366,7 @@ async function loadFingerprintLayers(
       label: "Market",
       entitySignals: [],
       tagSignals: [],
+      tagTypes: MARKET_TAG_TYPES,
       unresolvedInputs: [],
     },
     {
@@ -276,27 +374,30 @@ async function loadFingerprintLayers(
       label: "Brand in market",
       entitySignals: brand ? entitySignalsFor([brand], 30) : [],
       tagSignals: [],
-      unresolvedInputs: brand && brand.status !== "resolved" ? [brand.reference] : [],
+      tagTypes: CULTURAL_TAG_TYPES,
+      unresolvedInputs:
+        brand && unresolvedReference(brand) ? [brand.reference] : [],
     },
     {
       group: "product",
       label: "Product in market",
       entitySignals: [],
       tagSignals,
+      tagTypes: CULTURAL_TAG_TYPES,
       operator: "union",
-      unresolvedInputs: unresolved(tags.map((tag) => ({ status: tag.status, query: tag.query }))),
+      unresolvedInputs: unresolved(
+        tags.map((tag) => ({ status: tag.status, query: tag.query }))
+      ),
     },
     {
       group: "reference",
       label: "References in market",
       entitySignals: entitySignalsFor(referenceEntities, 20),
       tagSignals: [],
-      unresolvedInputs: unresolved(
-        referenceEntities.map((entity) => ({
-          status: entity.status,
-          reference: entity.reference,
-        }))
-      ),
+      tagTypes: CULTURAL_TAG_TYPES,
+      unresolvedInputs: referenceEntities
+        .filter(unresolvedReference)
+        .map((entity) => entity.reference),
     },
     {
       group: "combined",
@@ -306,15 +407,15 @@ async function loadFingerprintLayers(
         weight: signal.id === brand?.entityId ? 30 : signal.weight,
       })),
       tagSignals,
-      operator: "intersection",
+      tagTypes: CULTURAL_TAG_TYPES,
+      operator: getTagOperator(tagSignals.length),
       unresolvedInputs: [
+        ...references
+          .filter(unresolvedReference)
+          .map((entity) => entity.reference),
         ...unresolved(
-          references.map((entity) => ({
-            status: entity.status,
-            reference: entity.reference,
-          }))
+          tags.map((tag) => ({ status: tag.status, query: tag.query }))
         ),
-        ...unresolved(tags.map((tag) => ({ status: tag.status, query: tag.query }))),
       ],
     },
   ]
@@ -327,6 +428,7 @@ async function loadFingerprintLayers(
       locationQuery,
       entitySignals: spec.entitySignals,
       tagSignals: spec.tagSignals,
+      tagTypes: spec.tagTypes,
       ...(operator ? { tagOperator: operator } : {}),
       ...conditioningInput(brief),
       take: readTake(),
@@ -354,6 +456,7 @@ async function loadFingerprintLayers(
 }
 
 function conditioningInput(brief: CampaignBrief) {
+  const ageRange = brief.qlooAgeRange ?? inferAgeRange(brief)
   return {
     ...(brief.qlooAudienceIds && brief.qlooAudienceIds.length > 0
       ? { audienceIds: brief.qlooAudienceIds }
@@ -361,9 +464,24 @@ function conditioningInput(brief: CampaignBrief) {
     ...(brief.qlooAudienceWeight !== undefined
       ? { audienceWeight: brief.qlooAudienceWeight }
       : {}),
-    ...(brief.qlooAgeRange ? { ageRange: brief.qlooAgeRange } : {}),
+    ...(ageRange ? { ageRange } : {}),
     ...(brief.qlooGender ? { gender: brief.qlooGender } : {}),
   }
+}
+
+function inferAgeRange(brief: CampaignBrief): "24_and_younger" | undefined {
+  const input = [brief.productDescription, ...brief.culturalReferences].join(
+    " "
+  )
+  return /\b(?:genz|gen\s*z|generation\s*z)\b/i.test(input)
+    ? "24_and_younger"
+    : undefined
+}
+
+export function getTagOperator(
+  resolvedTagCount: number
+): "union" | "intersection" {
+  return resolvedTagCount >= 5 ? "intersection" : "union"
 }
 
 function entityInputSignals(
@@ -380,7 +498,9 @@ function entityInputSignals(
       !inputs.some((input) => input.id === reference.entityId)
     )
       return []
-    const input = inputs.find((candidate) => candidate.id === reference.entityId)
+    const input = inputs.find(
+      (candidate) => candidate.id === reference.entityId
+    )
     return [
       {
         provider: "qloo" as const,
@@ -450,7 +570,6 @@ async function loadComparison(
 
   try {
     const payload = await client.compareInsights({
-      filterType: "urn:tag",
       groupAEntityIds: [brand.entityId],
       groupBEntityIds: referenceIds,
       locationQuery,
@@ -607,7 +726,9 @@ function heatmapToJson(heatmap: QlooHeatmap): JsonObject {
       ...(point.affinityRank !== undefined
         ? { affinityRank: point.affinityRank }
         : {}),
-      ...(point.popularity !== undefined ? { popularity: point.popularity } : {}),
+      ...(point.popularity !== undefined
+        ? { popularity: point.popularity }
+        : {}),
     })),
   }
 }
@@ -631,9 +752,7 @@ function signalRecordToJson(signal: QlooSignalRecord): JsonObject {
       ...(signal.evidence.providerEntityId
         ? { providerEntityId: signal.evidence.providerEntityId }
         : {}),
-      ...(signal.evidence.excerpt
-        ? { excerpt: signal.evidence.excerpt }
-        : {}),
+      ...(signal.evidence.excerpt ? { excerpt: signal.evidence.excerpt } : {}),
     },
   }
 }
@@ -663,7 +782,7 @@ function parseTasteResponse(
     payload.localities ??
       payload.results.localities ??
       (isRecord(payload.query)
-        ? payload.query.localities ?? payload.query.locality
+        ? (payload.query.localities ?? payload.query.locality)
         : undefined)
   )
   const signals = payload.results.tags.flatMap((tag) =>
@@ -747,12 +866,17 @@ function createFingerprint(
 ): QlooFingerprint {
   const unresolvedInputs = [
     ...references
-      .filter((reference) => reference.status !== "resolved")
+      .filter(
+        (reference) =>
+          reference.status !== "resolved" &&
+          !isCoveredByResolvedTag(reference.reference, tags)
+      )
       .map((reference) => reference.reference),
-    ...tags
-      .filter((tag) => tag.status !== "resolved")
-      .map((tag) => tag.query),
+    ...tags.filter((tag) => tag.status !== "resolved").map((tag) => tag.query),
   ]
+  const tagOperator = layers.find(
+    (layer) => layer.group === "combined"
+  )?.operator
   return {
     locationQuery,
     location,
@@ -768,11 +892,34 @@ function createFingerprint(
     })),
     unresolvedInputs,
     ...(conditioning ? { conditioning } : {}),
-    tagOperator: "intersection",
+    ...(tagOperator ? { tagOperator } : {}),
     explainabilityRequested: true,
     ...(comparison ? { comparison } : {}),
     ...(heatmap ? { heatmap } : {}),
   }
+}
+
+function isCoveredByResolvedTag(
+  reference: string,
+  tags: ResolvedTag[]
+): boolean {
+  const normalizedReference = normalizeLabel(reference)
+  return tags.some(
+    (tag) =>
+      tag.status === "resolved" &&
+      normalizeLabel(tag.query) === normalizedReference
+  )
+}
+
+function normalizeLabel(value: string): string {
+  return value
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/\beye[\s-]?wears?\b/g, "eyewear")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(/ies$/, "y")
+    .replace(/s$/, "")
 }
 
 function conditioningSummary(
@@ -881,7 +1028,9 @@ function fingerprintToJson(fingerprint: QlooFingerprint): JsonObject {
     ...(fingerprint.comparison
       ? { comparison: comparisonToJson(fingerprint.comparison) }
       : {}),
-    ...(fingerprint.heatmap ? { heatmap: heatmapToJson(fingerprint.heatmap) } : {}),
+    ...(fingerprint.heatmap
+      ? { heatmap: heatmapToJson(fingerprint.heatmap) }
+      : {}),
   }
 }
 
@@ -907,9 +1056,7 @@ function resolvedTagToJson(tag: ResolvedTag): JsonObject {
             ...(tag.evidence.providerEntityId
               ? { providerEntityId: tag.evidence.providerEntityId }
               : {}),
-            ...(tag.evidence.excerpt
-              ? { excerpt: tag.evidence.excerpt }
-              : {}),
+            ...(tag.evidence.excerpt ? { excerpt: tag.evidence.excerpt } : {}),
           },
         }
       : {}),

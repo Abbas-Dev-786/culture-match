@@ -8,9 +8,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { AnalysisProgress } from "./components/analysis-progress"
-import { BaselineComparison } from "./components/baseline-comparison"
 import { CreatorCard } from "./components/creator-card"
 import { CultureProfile } from "./components/culture-profile"
+import { CultureLift } from "./components/culture-lift"
 import type {
   CampaignResultsResponse,
   CampaignStatusResponse,
@@ -216,7 +216,7 @@ export function CampaignView({ campaignId }: CampaignViewProps) {
             {results?.cultureProfile ? <CultureProfile profile={results.cultureProfile} /> : null}
 
             {results?.comparison ? (
-              <BaselineComparison
+              <CultureLift
                 comparison={results.comparison}
                 baseline={baselineMatches}
                 cultureInformed={cultureMatches}

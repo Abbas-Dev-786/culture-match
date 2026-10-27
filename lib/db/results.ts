@@ -24,6 +24,7 @@ import type { MatchConstraintStatus } from "@/lib/domain/types"
 
 export interface SafeCreatorResult {
   id: string
+  providerCreatorId: string
   variant: "baseline" | "culture_informed"
   name: string
   platform: string
@@ -128,6 +129,7 @@ function toSafeResult(
   const matchReasons = buildMatchReasons(normalized, scoreComponents, regionalMatch, languageMatch)
   return {
     id: candidate.id,
+    providerCreatorId: candidate.provider_creator_id,
     variant: candidate.search_variant,
     name: candidate.name,
     platform: candidate.platform,

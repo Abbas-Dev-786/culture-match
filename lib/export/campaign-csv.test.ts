@@ -6,6 +6,7 @@ import { campaignResultsToCsv } from "./campaign-csv.ts"
 test("campaign CSV export includes both variants and escapes values", () => {
   const match: SafeCreatorResult = {
     id: "match-1",
+    providerCreatorId: "creator-1",
     variant: "culture_informed",
     name: "Creator, One",
     platform: "instagram",

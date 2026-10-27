@@ -1,4 +1,5 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -66,32 +67,46 @@ export function AnalysisProgress({
           </div>
           <ProgressTrack />
         </Progress>
-        <ol className="grid gap-3" aria-live="polite">
-          {stages.map((stage, index) => {
-            const isComplete = run?.status === "completed" || index < currentIndex
-            const isCurrent = run?.status === "running" && index === currentIndex
-            return (
-              <li key={stage.key} className="flex items-start gap-3 text-sm">
-                <span
-                  className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-medium ${
-                    isComplete
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : isCurrent
-                        ? "border-primary text-primary"
-                        : "text-muted-foreground"
-                  }`}
-                  aria-label={isComplete ? "Complete" : isCurrent ? "In progress" : "Not started"}
-                >
-                  {isComplete ? "✓" : index + 1}
+        <Accordion multiple defaultValue={run?.status === "running" ? ["stages"] : []} className="border-0">
+          <AccordionItem value="stages" className="border-0">
+            <AccordionTrigger className="px-0 py-2">
+              <span>
+                View analysis stages
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  {run?.status === "completed" ? "All stages complete" : "Detailed progress"}
                 </span>
-                <span className="grid gap-0.5">
-                  <span className={isCurrent ? "font-medium" : ""}>{stage.label}</span>
-                  <span className="text-xs text-muted-foreground">{isCurrent ? run?.stageMessage : stage.description}</span>
-                </span>
-              </li>
-            )
-          })}
-        </ol>
+              </span>
+            </AccordionTrigger>
+            <AccordionContent className="px-0">
+              <ol className="grid gap-3" aria-live="polite">
+                {stages.map((stage, index) => {
+                  const isComplete = run?.status === "completed" || index < currentIndex
+                  const isCurrent = run?.status === "running" && index === currentIndex
+                  return (
+                    <li key={stage.key} className="flex items-start gap-3 text-sm">
+                      <span
+                        className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-medium ${
+                          isComplete
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : isCurrent
+                              ? "border-primary text-primary"
+                              : "text-muted-foreground"
+                        }`}
+                        aria-label={isComplete ? "Complete" : isCurrent ? "In progress" : "Not started"}
+                      >
+                        {isComplete ? "✓" : index + 1}
+                      </span>
+                      <span className="grid gap-0.5">
+                        <span className={isCurrent ? "font-medium" : ""}>{stage.label}</span>
+                        <span className="text-xs text-muted-foreground">{isCurrent ? run?.stageMessage : stage.description}</span>
+                      </span>
+                    </li>
+                  )
+                })}
+              </ol>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
         {pollingPaused ? (
           <Alert>
             <AlertTitle>Automatic refresh paused</AlertTitle>

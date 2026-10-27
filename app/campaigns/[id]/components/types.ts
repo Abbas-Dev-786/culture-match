@@ -89,6 +89,7 @@ export interface CultureProfileView {
 
 export interface CampaignMatchView {
   id: string
+  providerCreatorId: string
   variant: "baseline" | "culture_informed"
   name: string
   platform: string

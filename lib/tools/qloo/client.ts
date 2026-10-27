@@ -170,7 +170,9 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
     async getInsights(input) {
       const url = new URL(config.insightsUrl)
       const usePost =
-        input.requestMethod === "POST" || requiresWeightedPost(input)
+        input.requestMethod === "POST" ||
+        requiresWeightedPost(input.entitySignals) ||
+        requiresWeightedPost(input.tagSignals)
       if (!usePost) setInsightsParams(url, input)
       return requestProviderJson(
         fetchImpl,
@@ -450,8 +452,10 @@ export function serializeQlooAgeRange(
   return ageRange
 }
 
-function requiresWeightedPost(input: QlooInsightsInput): boolean {
-  return hasDistinctWeights(input.entitySignals)
+function requiresWeightedPost(
+  signals: QlooWeightedEntity[] | QlooWeightedTag[] | undefined
+): boolean {
+  return hasDistinctWeights(signals)
 }
 
 function hasDistinctWeights(
@@ -499,7 +503,10 @@ function buildInsightsBody(input: QlooInsightsInput): Record<string, unknown> {
       ...(signal.weight !== undefined ? { weight: signal.weight } : {}),
     }))
   if (input.tagSignals && input.tagSignals.length > 0)
-    body["signal.interests.tags"] = input.tagSignals.map((signal) => signal.tag)
+    body["signal.interests.tags"] = input.tagSignals.map((signal) => ({
+      tag: signal.tag,
+      ...(signal.weight !== undefined ? { weight: signal.weight } : {}),
+    }))
   if (input.tagOperator)
     body["operator.signal.interests.tags"] = input.tagOperator
   if (input.audienceIds && input.audienceIds.length > 0)

@@ -198,6 +198,15 @@ function creatorToJson(creator: NormalizedCreator): JsonObject {
     ...(creator.qlooEntityId ? { qlooEntityId: creator.qlooEntityId } : {}),
     ...(creator.qlooAffinity !== undefined ? { qlooAffinity: creator.qlooAffinity } : {}),
     ...(creator.qlooPopularity !== undefined ? { qlooPopularity: creator.qlooPopularity } : {}),
+    ...(creator.qlooPersonEntityId
+      ? { qlooPersonEntityId: creator.qlooPersonEntityId }
+      : {}),
+    ...(creator.qlooPersonAffinity !== undefined
+      ? { qlooPersonAffinity: creator.qlooPersonAffinity }
+      : {}),
+    ...(creator.qlooPersonPopularity !== undefined
+      ? { qlooPersonPopularity: creator.qlooPersonPopularity }
+      : {}),
     locationUnverified: creator.locationUnverified ?? true,
     missingFields: creator.missingFields,
     sourceFields: creator.sourceFields,
@@ -212,6 +221,24 @@ function creatorToJson(creator: NormalizedCreator): JsonObject {
     ...(creator.qlooSignals
       ? {
           qlooSignals: creator.qlooSignals.map((signal) => ({
+            signalId: signal.signalId,
+            kind: signal.kind,
+            name: signal.name,
+            types: signal.types,
+            ...(signal.affinity !== undefined
+              ? { affinity: signal.affinity }
+              : {}),
+            ...(signal.inputWeight !== undefined
+              ? { inputWeight: signal.inputWeight }
+              : {}),
+            sourceGroup: signal.sourceGroup,
+            evidence: evidenceToJson(signal.evidence),
+          })),
+        }
+      : {}),
+    ...(creator.qlooPersonSignals
+      ? {
+          qlooPersonSignals: creator.qlooPersonSignals.map((signal) => ({
             signalId: signal.signalId,
             kind: signal.kind,
             name: signal.name,

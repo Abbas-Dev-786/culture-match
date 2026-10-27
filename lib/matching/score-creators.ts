@@ -107,62 +107,63 @@ function culturalAffinityComponent(
   }
 
   const qlooSignals = (creator.qlooSignals ?? []).filter((signal) => signal.affinity !== undefined)
-  if (creator.qlooAffinity !== undefined) {
+  if (signals.length > 0 && qlooSignals.length > 0) {
+    const totalSignalWeight = qlooSignals.reduce((sum, signal) => sum + (signal.inputWeight ?? 1), 0)
+    const weightedAffinity = qlooSignals.reduce(
+      (sum, signal) => sum + normalizeAffinity(signal.affinity ?? 0) * (signal.inputWeight ?? 1),
+      0,
+    )
+    const marketEvidence = signals
+      .filter((signal) => qlooSignals.some((creatorSignal) => creatorSignal.signalId === signal.signalId))
+      .map((signal) => signal.evidence)
+
     return {
       key: "culturalAffinity",
       label: "Cultural affinity",
-      score: roundScore(normalizeAffinity(creator.qlooAffinity)),
+      score: roundScore(totalSignalWeight > 0 ? weightedAffinity / totalSignalWeight : 0),
       weight: scoreWeights.culturalAffinity,
-      availability: "supported",
-      rationale: "Qloo person-level affinity for the influencer against the campaign cultural signals.",
+      availability: "conditional",
+      rationale: "Location-conditioned Qloo affinity for resolved creator-content signals; this is not audience-level affinity.",
       evidence: [
-        ...creator.evidence.filter((item) => item.fieldPath === "$.results.entities[]"),
+        ...marketEvidence,
+        ...qlooSignals.map((signal) => signal.evidence),
+        ...creator.contentSignals.map((signal) => signal.evidence),
         derivedEvidence(
-          "Qloo person-level cultural affinity",
-          "$.derived.qlooAffinity",
+          "Qloo content-to-market resonance",
+          "$.derived.culturalAffinity",
           observedAt,
-          `Validated Qloo entity ${creator.qlooEntityId ?? "without an entity id"}`,
+          `Weighted ${qlooSignals.length} creator signals against the target market`,
         ),
       ],
     }
   }
-  if (signals.length === 0 || qlooSignals.length === 0) {
-    return unavailableComponent(
-      "culturalAffinity",
-      "Cultural affinity",
-      scoreWeights.culturalAffinity,
-      "Qloo did not resolve creator-content signals with a location-conditioned affinity",
-    )
+  const personAffinity = creator.qlooPersonAffinity ?? creator.qlooAffinity
+  const personEntityId = creator.qlooPersonEntityId ?? creator.qlooEntityId
+  if (personAffinity !== undefined) {
+    return {
+      key: "culturalAffinity",
+      label: "Cultural affinity",
+      score: roundScore(normalizeAffinity(personAffinity)),
+      weight: scoreWeights.culturalAffinity,
+      availability: "conditional",
+      rationale: "Fallback Qloo person-level affinity; creator-content resonance was unavailable.",
+      evidence: [
+        ...creator.evidence.filter((item) => item.fieldPath === "$.results.entities[]"),
+        derivedEvidence(
+          "Qloo person-level cultural affinity fallback",
+          "$.derived.qlooPersonAffinity",
+          observedAt,
+          `Validated Qloo entity ${personEntityId ?? "without an entity id"}`,
+        ),
+      ],
+    }
   }
-
-  const totalSignalWeight = qlooSignals.reduce((sum, signal) => sum + (signal.inputWeight ?? 1), 0)
-  const weightedAffinity = qlooSignals.reduce(
-    (sum, signal) => sum + normalizeAffinity(signal.affinity ?? 0) * (signal.inputWeight ?? 1),
-    0,
+  return unavailableComponent(
+    "culturalAffinity",
+    "Cultural affinity",
+    scoreWeights.culturalAffinity,
+    "Qloo did not resolve creator-content signals with a location-conditioned affinity",
   )
-  const marketEvidence = signals
-    .filter((signal) => qlooSignals.some((creatorSignal) => creatorSignal.signalId === signal.signalId))
-    .map((signal) => signal.evidence)
-
-  return {
-    key: "culturalAffinity",
-    label: "Cultural affinity",
-    score: roundScore(totalSignalWeight > 0 ? weightedAffinity / totalSignalWeight : 0),
-    weight: scoreWeights.culturalAffinity,
-    availability: "conditional",
-    rationale: "Location-conditioned Qloo affinity for resolved creator-content signals; this is not audience-level affinity.",
-    evidence: [
-      ...marketEvidence,
-      ...qlooSignals.map((signal) => signal.evidence),
-      ...creator.contentSignals.map((signal) => signal.evidence),
-      derivedEvidence(
-        "Qloo content-to-market resonance",
-        "$.derived.culturalAffinity",
-        observedAt,
-        `Weighted ${qlooSignals.length} creator signals against the target market`,
-      ),
-    ],
-  }
 }
 
 function engagementRateComponent(creator: NormalizedCreator): ScoreComponent {

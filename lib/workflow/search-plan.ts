@@ -60,34 +60,58 @@ export interface SearchPlans {
   baseline: SearchPlan
   cultureInformed: SearchPlan
   source: "deterministic" | "model"
+  queryConstruction: SearchQueryConstruction
+}
+
+export interface SearchQueryConstruction {
+  commonTerms: string[]
+  baseline: {
+    qlooTerms: string[]
+    query: string
+  }
+  cultureInformed: {
+    qlooTerms: string[]
+    qlooSignalIds: string[]
+    query: string
+  }
 }
 
 export function createDeterministicSearchPlans(
   brief: CampaignBrief,
   signals: CultureSignal[]
 ): SearchPlans {
-  const baseline = buildPlan("baseline", brief, [
+  const commonTerms = [
     brief.productCategory,
     brief.productDescription,
     brief.objective,
+    ...brief.preferredLanguages.slice(0, 3),
     ...audienceTerms(brief),
-  ].join(" "))
-  const terms = signals
+  ]
+  const qlooSignals = signals
     .filter((signal) => signal.evidence.verification !== "unverified")
     .sort((left, right) => (right.affinity ?? 0) - (left.affinity ?? 0))
     .slice(0, 3)
-    .map((signal) => signal.name)
-  const languageTerms = brief.preferredLanguages.slice(0, 3)
-  const culturalQuery = [
-    brief.productCategory,
-    brief.productDescription,
-    brief.objective,
-    ...terms,
-    ...languageTerms,
-    ...audienceTerms(brief),
-  ].join(" ")
+  const qlooTerms = qlooSignals.map((signal) => signal.name)
+  const baseline = buildPlan("baseline", brief, commonTerms.join(" "))
+  const culturalQuery = [...commonTerms, ...qlooTerms].join(" ")
   const cultureInformed = buildPlan("culture_informed", brief, culturalQuery)
-  return { baseline, cultureInformed, source: "deterministic" }
+  return {
+    baseline,
+    cultureInformed,
+    source: "deterministic",
+    queryConstruction: {
+      commonTerms,
+      baseline: {
+        qlooTerms: [],
+        query: baseline.query,
+      },
+      cultureInformed: {
+        qlooTerms,
+        qlooSignalIds: qlooSignals.map((signal) => signal.signalId),
+        query: cultureInformed.query,
+      },
+    },
+  }
 }
 
 export function validateSearchPlanAgainstCampaign(

@@ -96,6 +96,43 @@ test("score math renormalizes over available components", () => {
   assert.equal(result.caveats.includes("Audience geography is not verified; creator location is not audience evidence"), true)
 })
 
+test("content resonance takes precedence over person-level validation", () => {
+  const contentEvidence = signals[0].evidence
+  const result = scoreCreator(
+    brief,
+    signals,
+    creator({
+      qlooAffinity: 0.15,
+      qlooPersonAffinity: 0.15,
+      qlooPersonEntityId: "person-1",
+      contentSignals: [
+        {
+          text: "Streetwear",
+          sourceField: "$.posts[0].caption",
+          evidence: contentEvidence,
+        },
+      ],
+      qlooSignals: [
+        {
+          signalId: "tag-1",
+          kind: "tag",
+          name: "Streetwear",
+          types: ["urn:tag"],
+          affinity: 0.9,
+          inputWeight: 10,
+          sourceGroup: "creator",
+          evidence: contentEvidence,
+        },
+      ],
+    })
+  )
+  const component = result.components.find(
+    (item) => item.key === "culturalAffinity"
+  )
+  assert.equal(component?.score, 90)
+  assert.match(component?.rationale ?? "", /creator-content signals/)
+})
+
 test("missing provider fields remain unavailable instead of becoming zero scores", () => {
   const result = scoreCreator(
     { ...brief, minFollowers: undefined, maxFollowers: undefined },

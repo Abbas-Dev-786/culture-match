@@ -301,6 +301,27 @@ test("Qloo uses GET scalar weights and POST per-entity weights", async () => {
       { entity: "reference-1", weight: 20 },
     ]
   )
+
+  await client.getInsights({
+    filterType: "urn:tag",
+    tagSignals: [
+      { tag: "tag-1", weight: 30 },
+      { tag: "tag-2", weight: 10 },
+    ],
+    take: 10,
+  })
+  const weightedTagPost = requests.find(
+    (request) =>
+      request.method === "POST" &&
+      Array.isArray((request.body as Record<string, unknown>)["signal.interests.tags"])
+  )
+  assert.deepEqual(
+    (weightedTagPost?.body as Record<string, unknown>)["signal.interests.tags"],
+    [
+      { tag: "tag-1", weight: 30 },
+      { tag: "tag-2", weight: 10 },
+    ]
+  )
 })
 
 test("Qloo enriches creator content with location-conditioned affinity", async () => {
@@ -413,6 +434,9 @@ test("Qloo validates creators from the documented person insight response", asyn
   assert.equal(creator.qlooEntityId, "person-1")
   assert.equal(creator.qlooAffinity, 0.91)
   assert.equal(creator.qlooPopularity, 0.87)
+  assert.equal(creator.qlooPersonEntityId, "person-1")
+  assert.equal(creator.qlooPersonAffinity, 0.91)
+  assert.equal(creator.qlooPersonSignals?.[0]?.name, "Influencer")
   assert.equal(personRequestMethod, "POST")
   assert.equal(
     personRequestBody?.["filter.results.entities.query"],

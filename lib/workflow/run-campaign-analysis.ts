@@ -193,6 +193,20 @@ async function advanceWorkflow(
         baseline: actorPlanToJson(plans.baseline),
         cultureInformed: actorPlanToJson(culturePlan),
       },
+      searchQueryConstruction: {
+        commonTerms: plans.queryConstruction.commonTerms,
+        baseline: {
+          qlooTerms: plans.queryConstruction.baseline.qlooTerms,
+          qlooSignalIds: [],
+          query: plans.queryConstruction.baseline.query,
+        },
+        cultureInformed: {
+          qlooTerms: plans.queryConstruction.cultureInformed.qlooTerms,
+          qlooSignalIds: plans.queryConstruction.cultureInformed.qlooSignalIds,
+          query: culturePlan.query,
+          source: modelPlan ? "model" : "deterministic",
+        },
+      },
       searchPlanSource: modelPlan ? "model" : plans.source,
     }
     await saveCultureProfile(client, {
@@ -210,12 +224,25 @@ async function advanceWorkflow(
     const apify = createApifyClient()
     // Actor creation is intentionally single-attempt: a lost response can
     // mean Apify accepted the run, so repeating the request could duplicate it.
-    if (!claim.run.baseline_provider_run_id) {
-      const baselineStarted = await startCreatorSearch(
-        apify,
-        plans.baseline,
-        `${run.idempotency_key}:baseline`
-      )
+    const [baselineAttempt, cultureAttempt] = await Promise.allSettled([
+      claim.run.baseline_provider_run_id
+        ? Promise.resolve(undefined)
+        : startCreatorSearch(
+            apify,
+            plans.baseline,
+            `${run.idempotency_key}:baseline`
+          ),
+      claim.run.provider_run_id
+        ? Promise.resolve(undefined)
+        : startCreatorSearch(
+            apify,
+            culturePlan,
+            `${run.idempotency_key}:culture`
+          ),
+    ])
+
+    let persistedRun = claim.run
+    if (baselineAttempt.status === "fulfilled" && baselineAttempt.value) {
       logWorkflowEvent({
         campaignId: campaign.id,
         analysisRunId: run.id,
@@ -224,20 +251,15 @@ async function advanceWorkflow(
         provider: "apify",
         startedAt: run.started_at,
       })
-      run = await updateRunBaselineProviderIds(
+      persistedRun = await updateRunBaselineProviderIds(
         client,
-        claim.run,
-        baselineStarted.runId,
-        baselineStarted.datasetId,
+        persistedRun,
+        baselineAttempt.value.runId,
+        baselineAttempt.value.datasetId,
         claim.claimToken
       )
     }
-    if (!run.provider_run_id) {
-      const started = await startCreatorSearch(
-        apify,
-        culturePlan,
-        `${run.idempotency_key}:culture`
-      )
+    if (cultureAttempt.status === "fulfilled" && cultureAttempt.value) {
       logWorkflowEvent({
         campaignId: campaign.id,
         analysisRunId: run.id,
@@ -246,13 +268,30 @@ async function advanceWorkflow(
         provider: "apify",
         startedAt: run.started_at,
       })
-      run = await updateRunProviderIds(
+      persistedRun = await updateRunProviderIds(
         client,
-        run,
-        started.runId,
-        started.datasetId,
+        persistedRun,
+        cultureAttempt.value.runId,
+        cultureAttempt.value.datasetId,
         claim.claimToken
       )
+    }
+    run = persistedRun
+
+    const failedAttempt = [baselineAttempt, cultureAttempt].find(
+      (attempt) => attempt.status === "rejected"
+    )
+    if (failedAttempt?.status === "rejected") {
+      if (failedAttempt.reason instanceof ProviderError) {
+        throw failedAttempt.reason
+      }
+      throw new ProviderError({
+        provider: "apify",
+        code: "UPSTREAM_FAILURE",
+        message: "One of the parallel Apify searches failed to start",
+        retryable: false,
+        cause: failedAttempt.reason,
+      })
     }
     return run
   }

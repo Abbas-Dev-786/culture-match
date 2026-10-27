@@ -188,8 +188,15 @@ function applyPersonMatch(
     ...(match.popularity !== undefined
       ? { qlooPopularity: match.popularity }
       : {}),
+    qlooPersonEntityId: match.entityId,
+    ...(match.affinity !== undefined
+      ? { qlooPersonAffinity: match.affinity }
+      : {}),
+    ...(match.popularity !== undefined
+      ? { qlooPersonPopularity: match.popularity }
+      : {}),
     ...(match.signals.length > 0
-      ? { qlooSignals: [...(creator.qlooSignals ?? []), ...match.signals] }
+      ? { qlooPersonSignals: match.signals }
       : {}),
     evidence: [
       ...creator.evidence,

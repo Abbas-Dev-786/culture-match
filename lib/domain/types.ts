@@ -187,11 +187,15 @@ export interface NormalizedCreator {
   qlooEntityId?: string
   qlooAffinity?: number
   qlooPopularity?: number
+  qlooPersonEntityId?: string
+  qlooPersonAffinity?: number
+  qlooPersonPopularity?: number
   isVerified?: boolean
   locationUnverified?: boolean
   providerMatchScore?: number
   contentSignals: CreatorContentSignal[]
   qlooSignals?: QlooSignalRecord[]
+  qlooPersonSignals?: QlooSignalRecord[]
   missingFields: string[]
   sourceFields: JsonObject
   evidence: EvidenceRef[]

@@ -10,13 +10,15 @@ import type {
 } from "../../domain/types.ts"
 import { ProviderError } from "../provider-errors.ts"
 import type { QlooClient } from "./client.ts"
-import { resolveEntities, type ResolvedEntity } from "./resolve-entities.ts"
-import {
-  expandTagQueries,
-  resolveTags,
-  type ResolvedTag,
-} from "./resolve-tags.ts"
+import type { ResolvedEntity } from "./resolve-entities.ts"
+import type { ResolvedTag } from "./resolve-tags.ts"
 import { CULTURAL_TAG_TYPES, MARKET_TAG_TYPES } from "./query-config.ts"
+import {
+  isCoveredByResolvedTag,
+  resolveCampaignSignals,
+  resolvedTagToJson,
+  type CampaignSignalResolution,
+} from "./resolve-campaign-signals.ts"
 
 export interface CultureResearchResult {
   signals: CultureSignal[]
@@ -32,51 +34,23 @@ export interface CultureResearchResult {
   rawPayload?: JsonObject
 }
 
-export async function analyzeCulture(
+export interface TasteProfileResult {
+  signals: CultureSignal[]
+  layers: FingerprintLayerResult[]
+  primaryLayer: FingerprintLayerResult
+}
+
+export async function buildTasteProfile(
   brief: CampaignBrief,
+  resolution: CampaignSignalResolution,
   client: QlooClient,
   observedAt = new Date().toISOString()
-): Promise<CultureResearchResult> {
-  const resolvedReferences = await resolveEntities(
-    [...new Set([brief.brandName, ...brief.culturalReferences])],
-    client,
-    observedAt
-  )
-  const resolvedReferenceNames = new Set(
-    resolvedReferences
-      .filter((reference) => reference.status === "resolved")
-      .map((reference) => reference.reference)
-  )
-  const tagFallbackReferences = new Set(
-    resolvedReferences
-      .filter((reference) => reference.tagFallback)
-      .map((reference) => reference.reference)
-  )
-  const fallbackTags = resolvedReferences.flatMap((reference) =>
-    reference.tagFallback
-      ? [tagFallbackToResolvedTag(reference.reference, reference.tagFallback)]
-      : []
-  )
-  const searchedTags = await resolveTagsWithFallback(
-    expandTagQueries([
-      brief.productCategory,
-      brief.productDescription,
-      ...brief.culturalReferences.filter(
-        (reference) =>
-          !resolvedReferenceNames.has(reference) &&
-          !tagFallbackReferences.has(reference)
-      ),
-    ]),
-    client,
-    observedAt
-  )
-  const resolvedTags = mergeResolvedTags(fallbackTags, searchedTags)
-  const locationQuery = buildLocationQuery(brief)
+): Promise<TasteProfileResult> {
   const layers = await loadFingerprintLayers(
     brief,
-    locationQuery,
-    resolvedReferences,
-    resolvedTags,
+    resolution.locationQuery,
+    resolution.resolvedReferences,
+    resolution.resolvedTags,
     client,
     observedAt
   )
@@ -87,10 +61,11 @@ export async function analyzeCulture(
       (signal) => signal.evidence.fieldPath === "$.results.tags[]"
     )
   )
+
   if (!primaryLayer) {
     const fallbackPayload = await client.getInsights({
       filterType: "urn:tag",
-      locationQuery,
+      locationQuery: resolution.locationQuery,
       tagTypes: MARKET_TAG_TYPES,
       popularityMin: 0.9,
       take: readTake(),
@@ -114,15 +89,10 @@ export async function analyzeCulture(
     layers.push(fallbackLayer)
     primaryLayer = fallbackLayer
   }
-  const signalRecords = primaryLayer ? dedupeSignals(primaryLayer.signals) : []
-  const signals = signalRecords.map(recordToCultureSignal)
 
-  if (
-    !primaryLayer ||
-    !primaryLayer.signals.some(
-      (signal) => signal.evidence.fieldPath === "$.results.tags[]"
-    )
-  ) {
+  const signalRecords = dedupeSignals(primaryLayer.signals)
+  const signals = signalRecords.map(recordToCultureSignal)
+  if (!primaryLayer.signals.some((signal) => signal.evidence.fieldPath === "$.results.tags[]")) {
     throw new ProviderError({
       provider: "qloo",
       code: "EMPTY_RESULT",
@@ -130,6 +100,19 @@ export async function analyzeCulture(
       retryable: false,
     })
   }
+
+  return { signals, layers, primaryLayer }
+}
+
+export async function analyzeCulture(
+  brief: CampaignBrief,
+  client: QlooClient,
+  observedAt = new Date().toISOString()
+): Promise<CultureResearchResult> {
+  const resolution = await resolveCampaignSignals(brief, client, observedAt)
+  const { resolvedReferences, resolvedTags, locationQuery } = resolution
+  const tasteProfile = await buildTasteProfile(brief, resolution, client, observedAt)
+  const { signals, layers, primaryLayer } = tasteProfile
 
   const comparison = await loadComparison(
     brief,
@@ -245,64 +228,7 @@ export async function analyzeCulture(
   }
 }
 
-function tagFallbackToResolvedTag(
-  query: string,
-  fallback: NonNullable<ResolvedEntity["tagFallback"]>
-): ResolvedTag {
-  return {
-    query,
-    status: "resolved",
-    tagId: fallback.tagId,
-    name: fallback.name,
-    types: fallback.types,
-    candidates: [
-      {
-        tagId: fallback.tagId,
-        name: fallback.name,
-        types: fallback.types,
-      },
-    ],
-    evidence: fallback.evidence,
-  }
-}
-
-function mergeResolvedTags(
-  primary: ResolvedTag[],
-  secondary: ResolvedTag[]
-): ResolvedTag[] {
-  const seen = new Set<string>()
-  return [...primary, ...secondary].filter((tag) => {
-    const key = tag.tagId ?? `query:${tag.query}`
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
-}
-
-async function resolveTagsWithFallback(
-  queries: string[],
-  client: QlooClient,
-  observedAt: string
-): Promise<ResolvedTag[]> {
-  try {
-    return await resolveTags(queries, client, observedAt)
-  } catch (error) {
-    if (
-      !(error instanceof ProviderError) ||
-      !["INVALID_PARAMETERS", "UPSTREAM_FAILURE", "SCHEMA_MISMATCH"].includes(
-        error.code
-      )
-    )
-      throw error
-    return queries.map((query) => ({
-      query,
-      status: "unresolved" as const,
-      candidates: [],
-    }))
-  }
-}
-
-interface FingerprintLayerResult {
+export interface FingerprintLayerResult {
   group: QlooFingerprintGroup
   label: string
   signals: QlooSignalRecord[]
@@ -456,7 +382,7 @@ async function loadFingerprintLayers(
 }
 
 function conditioningInput(brief: CampaignBrief) {
-  const ageRange = brief.qlooAgeRange ?? inferAgeRange(brief)
+  const ageRange = brief.qlooAgeRange
   return {
     ...(brief.qlooAudienceIds && brief.qlooAudienceIds.length > 0
       ? { audienceIds: brief.qlooAudienceIds }
@@ -467,15 +393,6 @@ function conditioningInput(brief: CampaignBrief) {
     ...(ageRange ? { ageRange } : {}),
     ...(brief.qlooGender ? { gender: brief.qlooGender } : {}),
   }
-}
-
-function inferAgeRange(brief: CampaignBrief): "24_and_younger" | undefined {
-  const input = [brief.productDescription, ...brief.culturalReferences].join(
-    " "
-  )
-  return /\b(?:genz|gen\s*z|generation\s*z)\b/i.test(input)
-    ? "24_and_younger"
-    : undefined
 }
 
 export function getTagOperator(
@@ -899,29 +816,6 @@ function createFingerprint(
   }
 }
 
-function isCoveredByResolvedTag(
-  reference: string,
-  tags: ResolvedTag[]
-): boolean {
-  const normalizedReference = normalizeLabel(reference)
-  return tags.some(
-    (tag) =>
-      tag.status === "resolved" &&
-      normalizeLabel(tag.query) === normalizedReference
-  )
-}
-
-function normalizeLabel(value: string): string {
-  return value
-    .trim()
-    .toLocaleLowerCase()
-    .replace(/\beye[\s-]?wears?\b/g, "eyewear")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim()
-    .replace(/ies$/, "y")
-    .replace(/s$/, "")
-}
-
 function conditioningSummary(
   brief: CampaignBrief
 ): QlooFingerprint["conditioning"] {
@@ -1032,45 +926,6 @@ function fingerprintToJson(fingerprint: QlooFingerprint): JsonObject {
       ? { heatmap: heatmapToJson(fingerprint.heatmap) }
       : {}),
   }
-}
-
-function resolvedTagToJson(tag: ResolvedTag): JsonObject {
-  return {
-    query: tag.query,
-    status: tag.status,
-    ...(tag.tagId ? { tagId: tag.tagId } : {}),
-    ...(tag.name ? { name: tag.name } : {}),
-    ...(tag.types ? { types: tag.types } : {}),
-    candidates: tag.candidates.map((candidate) => ({
-      tagId: candidate.tagId,
-      name: candidate.name,
-      types: candidate.types,
-    })),
-    ...(tag.evidence
-      ? {
-          evidence: {
-            source: tag.evidence.source,
-            fieldPath: tag.evidence.fieldPath,
-            observedAt: tag.evidence.observedAt,
-            verification: tag.evidence.verification,
-            ...(tag.evidence.providerEntityId
-              ? { providerEntityId: tag.evidence.providerEntityId }
-              : {}),
-            ...(tag.evidence.excerpt ? { excerpt: tag.evidence.excerpt } : {}),
-          },
-        }
-      : {}),
-  }
-}
-
-function buildLocationQuery(brief: CampaignBrief): string {
-  return [
-    brief.targetMarket.city,
-    brief.targetMarket.region,
-    brief.targetMarket.country,
-  ]
-    .filter((value): value is string => Boolean(value?.trim()))
-    .join(", ")
 }
 
 function readTake(): number {

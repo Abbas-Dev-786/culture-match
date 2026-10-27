@@ -48,6 +48,21 @@ export function normalizeStoredCreator(
     ...(readUnitNumber(payload.qlooPopularity) !== undefined
       ? { qlooPopularity: readUnitNumber(payload.qlooPopularity) }
       : {}),
+    ...(typeof payload.qlooPersonEntityId === "string"
+      ? { qlooPersonEntityId: payload.qlooPersonEntityId }
+      : typeof payload.qlooEntityId === "string"
+        ? { qlooPersonEntityId: payload.qlooEntityId }
+        : {}),
+    ...(readUnitNumber(payload.qlooPersonAffinity) !== undefined
+      ? { qlooPersonAffinity: readUnitNumber(payload.qlooPersonAffinity) }
+      : readUnitNumber(payload.qlooAffinity) !== undefined
+        ? { qlooPersonAffinity: readUnitNumber(payload.qlooAffinity) }
+        : {}),
+    ...(readUnitNumber(payload.qlooPersonPopularity) !== undefined
+      ? { qlooPersonPopularity: readUnitNumber(payload.qlooPersonPopularity) }
+      : readUnitNumber(payload.qlooPopularity) !== undefined
+        ? { qlooPersonPopularity: readUnitNumber(payload.qlooPopularity) }
+        : {}),
     ...(row.is_verified !== null ? { isVerified: row.is_verified } : {}),
     ...(row.location_unverified !== null
       ? { locationUnverified: row.location_unverified }
@@ -57,6 +72,7 @@ export function normalizeStoredCreator(
       : {}),
     contentSignals: readContentSignals(payload.contentSignals),
     qlooSignals: readQlooSignals(payload.qlooSignals),
+    qlooPersonSignals: readQlooSignals(payload.qlooPersonSignals),
     missingFields: readStringArray(payload.missingFields),
     sourceFields: isJsonObject(payload.sourceFields) ? payload.sourceFields : {},
     evidence,

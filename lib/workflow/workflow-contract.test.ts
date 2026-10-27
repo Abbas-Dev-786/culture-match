@@ -47,6 +47,10 @@ test("search plans preserve campaign constraints and distinguish variants", () =
   assert.equal(plans.cultureInformed.maxResults, 5)
   assert.match(plans.cultureInformed.query, /female audience/)
   assert.match(plans.cultureInformed.query, /younger audience/)
+  assert.deepEqual(plans.queryConstruction.baseline.qlooTerms, [])
+  assert.deepEqual(plans.queryConstruction.cultureInformed.qlooTerms, ["Hindi Cinema"])
+  assert.deepEqual(plans.queryConstruction.cultureInformed.qlooSignalIds, ["tag-1"])
+  assert.doesNotMatch(plans.baseline.query, /Hindi Cinema/)
 })
 
 test("search plan schema rejects unsupported filters and URLs", () => {

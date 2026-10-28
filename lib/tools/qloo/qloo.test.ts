@@ -439,14 +439,84 @@ test("Qloo validates creators from the documented person insight response", asyn
   assert.equal(creator.qlooPersonSignals?.[0]?.name, "Influencer")
   assert.equal(personRequestMethod, "POST")
   assert.equal(
-    personRequestBody?.["filter.results.entities.query"],
-    "Urban Streetwear"
+    JSON.stringify(personRequestBody?.["filter.results.entities.query"]),
+    JSON.stringify(["Urban Streetwear"])
   )
-  assert.equal(personRequestBody?.["bias.trends"], "high")
+  assert.equal(personRequestBody?.["bias.trends"], undefined)
   assert.equal(personRequestBody?.["signal.demographics.age"], undefined)
   assert.equal(personRequestBody?.["signal.location.query"], undefined)
   assert.equal(personRequestUrl?.searchParams.has("filter.type"), false)
   assert.equal(personRequestBody?.["filter.type"], "urn:entity:person")
+  assert.equal(personRequestBody?.["filter.tags"], undefined)
+})
+
+test("Qloo rejects a person result whose name does not match the creator", async () => {
+  const client = createQlooClient({
+    baseUrl: "https://qloo.test",
+    searchUrl: "https://qloo.test/search",
+    insightsUrl: "https://qloo.test/v2/insights",
+    apiKey: "test-key",
+    fetchImpl: async (input) => {
+      if (input.includes("filter.type=urn%3Aentity%3Aperson")) {
+        return new Response(JSON.stringify({
+          results: { entities: [{ entity_id: "wrong-person", name: "Different Person", affinity: 0.99 }] },
+        }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ results: { tags: [] } }), { status: 200 })
+    },
+  })
+
+  const [creator] = await enrichCreatorsWithQloo(
+    [{
+      provider: "apify",
+      providerCreatorId: "creator-unresolved",
+      name: "Urban Streetwear",
+      platform: "instagram",
+      contentSignals: [],
+      missingFields: [],
+      sourceFields: {},
+      evidence: [],
+    }],
+    "Berlin",
+    client,
+  )
+
+  assert.equal(creator.qlooPersonEntityId, undefined)
+  assert.equal(creator.qlooPersonAffinity, undefined)
+})
+
+test("Qloo applies tag operators to signal interests tags", async () => {
+  let requestUrl: URL | undefined
+  const client = createQlooClient({
+    baseUrl: "https://qloo.test",
+    searchUrl: "https://qloo.test/search",
+    insightsUrl: "https://qloo.test/v2/insights",
+    apiKey: "test-key",
+    fetchImpl: async (input) => {
+      requestUrl = new URL(input)
+      return new Response(JSON.stringify({ results: { tags: [] } }), { status: 200 })
+    },
+  })
+
+  await client.getInsights({
+    filterType: "urn:tag",
+    tagSignals: [
+      { tag: "urn:tag:style:qloo:streetwear" },
+      { tag: "urn:tag:lifestyle:qloo:outdoor" },
+    ],
+    tagOperator: "intersection",
+    take: 5,
+  })
+
+  assert.equal(
+    requestUrl?.searchParams.get("signal.interests.tags"),
+    "urn:tag:style:qloo:streetwear,urn:tag:lifestyle:qloo:outdoor",
+  )
+  assert.equal(
+    requestUrl?.searchParams.get("operator.signal.interests.tags"),
+    "intersection",
+  )
+  assert.equal(requestUrl?.searchParams.get("operator.filter.tags"), null)
 })
 
 test("Qloo exposes documented comparison and heatmap request contracts", async () => {

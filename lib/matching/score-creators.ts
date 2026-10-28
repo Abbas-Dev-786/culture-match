@@ -12,7 +12,7 @@ import {
 } from "./evidence.ts"
 import { creatorTier, creatorTierBudgetRange } from "./creator-tier.ts"
 
-export const SCORE_ALGORITHM_VERSION = "prd-v1"
+export const SCORE_ALGORITHM_VERSION = "prd-v2-evidence-calibrated"
 const DEFAULT_SCORE_OBSERVED_AT = "1970-01-01T00:00:00.000Z"
 
 export const scoreWeights = {
@@ -35,6 +35,7 @@ export interface ScoredCreator {
 
 export interface ScoreOptions {
   includeQlooResonance?: boolean
+  normalization?: "available" | "fixed"
 }
 
 export function scoreCreators(
@@ -66,13 +67,23 @@ export function scoreCreator(
   ]
   const available = components.filter((component) => component.score !== undefined)
   const weightTotal = available.reduce((sum, component) => sum + component.weight, 0)
-  const weightedScore = weightTotal > 0
-    ? available.reduce((sum, component) => sum + (component.score ?? 0) * component.weight, 0) / weightTotal
+  const scoreDenominator = options.normalization === "fixed" ? totalWeight() : weightTotal
+  const weightedScore = available.length > 0 && scoreDenominator > 0
+    ? available.reduce((sum, component) => sum + (component.score ?? 0) * component.weight, 0) / scoreDenominator
     : undefined
   const evidence = uniqueEvidence(components.flatMap((component) => component.evidence))
   const caveats = [...creator.missingFields.map((field) => `Missing ${field} data`)]
-  if (brief.maxBudget !== undefined && creator.estimatedFee === undefined) {
-    caveats.push("Creator fee data is unavailable unless reported by the provider")
+  const hasPostContentEvidence = creator.contentSignals.some(
+    (signal) => signal.evidenceKind !== "bio" && signal.sourceField !== "$.creator.bio"
+  )
+  const hasBioEvidence = creator.contentSignals.some(
+    (signal) => signal.evidenceKind === "bio" || signal.sourceField === "$.creator.bio"
+  )
+  if (hasBioEvidence && !hasPostContentEvidence) {
+    caveats.push("Cultural alignment is bio/profile-derived; no post or content evidence was available")
+  }
+  if ((brief.maxBudget !== undefined || brief.minBudget !== undefined) && creator.estimatedFee === undefined) {
+    caveats.push("Budget fit uses follower count as a rough tier proxy; creator fee and affordability are unverified")
   }
   if (creator.locationUnverified !== false) {
     caveats.push("Audience geography is not verified; creator location is not audience evidence")
@@ -106,8 +117,11 @@ function culturalAffinityComponent(
     )
   }
 
+  const postContentSignals = creator.contentSignals.filter(
+    (signal) => signal.evidenceKind !== "bio" && signal.sourceField !== "$.creator.bio"
+  )
   const qlooSignals = (creator.qlooSignals ?? []).filter((signal) => signal.affinity !== undefined)
-  if (signals.length > 0 && qlooSignals.length > 0) {
+  if (postContentSignals.length > 0 && signals.length > 0 && qlooSignals.length > 0) {
     const totalSignalWeight = qlooSignals.reduce((sum, signal) => sum + (signal.inputWeight ?? 1), 0)
     const weightedAffinity = qlooSignals.reduce(
       (sum, signal) => sum + normalizeAffinity(signal.affinity ?? 0) * (signal.inputWeight ?? 1),
@@ -127,7 +141,7 @@ function culturalAffinityComponent(
       evidence: [
         ...marketEvidence,
         ...qlooSignals.map((signal) => signal.evidence),
-        ...creator.contentSignals.map((signal) => signal.evidence),
+        ...postContentSignals.map((signal) => signal.evidence),
         derivedEvidence(
           "Qloo content-to-market resonance",
           "$.derived.culturalAffinity",
@@ -137,16 +151,18 @@ function culturalAffinityComponent(
       ],
     }
   }
-  const personAffinity = creator.qlooPersonAffinity ?? creator.qlooAffinity
-  const personEntityId = creator.qlooPersonEntityId ?? creator.qlooEntityId
-  if (personAffinity !== undefined) {
+  const personAffinity = creator.qlooPersonEntityId !== undefined
+    ? creator.qlooPersonAffinity
+    : undefined
+  const personEntityId = creator.qlooPersonEntityId
+  if (personAffinity !== undefined && personEntityId !== undefined) {
     return {
       key: "culturalAffinity",
       label: "Cultural affinity",
       score: roundScore(normalizeAffinity(personAffinity)),
       weight: scoreWeights.culturalAffinity,
       availability: "conditional",
-      rationale: "Fallback Qloo person-level affinity; creator-content resonance was unavailable.",
+      rationale: "Exact Qloo person-entity affinity; this is profile-level cultural alignment, not proof that followers share these tastes.",
       evidence: [
         ...creator.evidence.filter((item) => item.fieldPath === "$.results.entities[]"),
         derivedEvidence(
@@ -162,7 +178,7 @@ function culturalAffinityComponent(
     "culturalAffinity",
     "Cultural affinity",
     scoreWeights.culturalAffinity,
-    "Qloo did not resolve creator-content signals with a location-conditioned affinity",
+    "Qloo did not resolve usable post/content evidence or an exact person-entity match",
   )
 }
 
@@ -254,7 +270,7 @@ function budgetTierFitComponent(
   if (brief.maxBudget === undefined && brief.minBudget === undefined) {
     return unavailableComponent(
       "budgetTierFit",
-      "Budget tier fit",
+      "Budget tier proxy",
       scoreWeights.budgetTierFit,
       "A provider-reported creator fee and campaign budget are required",
     )
@@ -264,7 +280,7 @@ function budgetTierFitComponent(
       "budgetTierFit",
       "Budget tier fit",
       scoreWeights.budgetTierFit,
-      "Follower count is required to estimate the PRD budget tier when creator fee data is unavailable",
+      "Follower count is required for the rough budget-tier proxy when creator fee data is unavailable",
     )
   }
   const minimum = brief.minBudget ?? 0
@@ -278,15 +294,16 @@ function budgetTierFitComponent(
     : tierBudgetScore(creator.followers, minimum, maximum)
   return {
     key: "budgetTierFit",
-    label: "Budget tier fit",
+    label: "Budget tier proxy",
     score: roundScore(score),
     weight: scoreWeights.budgetTierFit,
     availability: "conditional",
     rationale: creator.estimatedFee !== undefined
       ? "Provider-reported creator fee compared with the campaign budget range."
-      : `Follower-based ${creatorTier(creator.followers)} tier compared with the campaign budget matrix; creator fee is unavailable.`,
+      : `Follower-based ${creatorTier(creator.followers)} tier compared with the campaign budget matrix; this is not a creator fee or affordability guarantee.`,
     evidence: [
       ...creator.evidence.filter((item) => item.fieldPath.includes("fee")),
+      ...creator.evidence.filter((item) => item.fieldPath.includes("followers")),
       userInputEvidence("Campaign budget", "$.brief.budget", observedAt),
     ],
   }

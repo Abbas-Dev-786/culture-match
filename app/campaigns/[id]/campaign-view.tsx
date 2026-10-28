@@ -225,7 +225,7 @@ export function CampaignView({ campaignId }: CampaignViewProps) {
               <Card>
                 <CardHeader>
                   <CardTitle>CultureMatch shortlist</CardTitle>
-                  <CardDescription>Ranked by cultural affinity, engagement, semantic relevance, growth, consistency, and available budget evidence.</CardDescription>
+                  <CardDescription>Ranked with provider-reported evidence and Qloo cultural signals. This report demonstrates discovery and ranking changes, not guaranteed campaign performance.</CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-3">
                   {cultureMatches.map((match) => <CreatorCard key={match.id} match={match} />)}

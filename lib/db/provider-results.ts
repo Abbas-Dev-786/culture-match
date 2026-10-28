@@ -216,6 +216,7 @@ function creatorToJson(creator: NormalizedCreator): JsonObject {
     contentSignals: creator.contentSignals.map((signal) => ({
       text: signal.text,
       sourceField: signal.sourceField,
+      ...(signal.evidenceKind ? { evidenceKind: signal.evidenceKind } : {}),
       evidence: evidenceToJson(signal.evidence),
     })),
     ...(creator.qlooSignals

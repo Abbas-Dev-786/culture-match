@@ -656,17 +656,17 @@ function buildMatchReasons(
 ): string[] {
   const reasons: string[] = []
   const culture = components.find((component) => component.key === "culturalAffinity")
-  if (creator.qlooAffinity !== undefined) {
-    reasons.push(`Qloo person-level cultural affinity: ${(creator.qlooAffinity * 100).toFixed(0)}/100`)
-  } else if (culture?.score !== undefined && creator.qlooSignals?.length) {
-    reasons.push(`Qloo matched ${creator.qlooSignals.length} creator-content signal${creator.qlooSignals.length === 1 ? "" : "s"}`)
+  if (creator.qlooPersonEntityId !== undefined && creator.qlooPersonAffinity !== undefined) {
+    reasons.push(`Exact Qloo person-entity affinity: ${(creator.qlooPersonAffinity * 100).toFixed(0)}/100`)
+  } else if (culture?.score !== undefined && creator.qlooSignals?.length && creator.contentSignals.some((signal) => signal.evidenceKind !== "bio" && signal.sourceField !== "$.creator.bio")) {
+    reasons.push(`Qloo matched ${creator.qlooSignals.length} post/content signal${creator.qlooSignals.length === 1 ? "" : "s"}`)
   }
   const engagement = components.find((component) => component.key === "engagementRate")
   if (creator.engagementRate !== undefined && engagement?.score !== undefined) {
     reasons.push(`Provider engagement rate: ${(creator.engagementRate * 100).toFixed(2)}%`)
   }
   if (creator.providerMatchScore !== undefined) {
-    reasons.push(`Natural-language search relevance: ${(creator.providerMatchScore * 100).toFixed(0)}/100`)
+    reasons.push(`Provider-reported semantic relevance: ${(creator.providerMatchScore * 100).toFixed(0)}/100`)
   }
   if (regionalMatch === "matched") reasons.push("Provider-reported audience region matches the target market")
   if (languageMatch === "matched") reasons.push("Provider-reported language matches campaign needs")

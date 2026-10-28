@@ -490,7 +490,7 @@ function buildInsightsBody(input: QlooInsightsInput): Record<string, unknown> {
   if (input.tagTypes && input.tagTypes.length > 0)
     body["filter.tag.types"] = input.tagTypes
   if (input.filterResultsEntitiesQuery)
-    body["filter.results.entities.query"] = input.filterResultsEntitiesQuery
+    body["filter.results.entities.query"] = [input.filterResultsEntitiesQuery]
   if (input.biasTrends) body["bias.trends"] = input.biasTrends
   if (input.popularityMin !== undefined)
     body["filter.popularity.min"] = input.popularityMin

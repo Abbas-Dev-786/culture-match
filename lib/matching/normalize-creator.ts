@@ -50,18 +50,12 @@ export function normalizeStoredCreator(
       : {}),
     ...(typeof payload.qlooPersonEntityId === "string"
       ? { qlooPersonEntityId: payload.qlooPersonEntityId }
-      : typeof payload.qlooEntityId === "string"
-        ? { qlooPersonEntityId: payload.qlooEntityId }
         : {}),
     ...(readUnitNumber(payload.qlooPersonAffinity) !== undefined
       ? { qlooPersonAffinity: readUnitNumber(payload.qlooPersonAffinity) }
-      : readUnitNumber(payload.qlooAffinity) !== undefined
-        ? { qlooPersonAffinity: readUnitNumber(payload.qlooAffinity) }
         : {}),
     ...(readUnitNumber(payload.qlooPersonPopularity) !== undefined
       ? { qlooPersonPopularity: readUnitNumber(payload.qlooPersonPopularity) }
-      : readUnitNumber(payload.qlooPopularity) !== undefined
-        ? { qlooPersonPopularity: readUnitNumber(payload.qlooPopularity) }
         : {}),
     ...(row.is_verified !== null ? { isVerified: row.is_verified } : {}),
     ...(row.location_unverified !== null
@@ -93,6 +87,9 @@ function readContentSignals(value: Json | undefined): CreatorContentSignal[] {
       {
         text: item.text,
         sourceField: item.sourceField,
+        ...(item.evidenceKind === "bio" || item.evidenceKind === "post_or_content"
+          ? { evidenceKind: item.evidenceKind }
+          : { evidenceKind: item.sourceField === "$.creator.bio" ? "bio" as const : "post_or_content" as const }),
         evidence: readEvidenceItem(item.evidence),
       },
     ]

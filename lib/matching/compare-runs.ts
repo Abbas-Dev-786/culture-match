@@ -22,18 +22,11 @@ export function compareRuns(
         providerCreatorId,
         ...(baselineItem ? { baselineRank: baselineItem.rank } : {}),
         ...(cultureItem ? { cultureInformedRank: cultureItem.rank } : {}),
-        ...(baselineItem?.score !== null &&
-        baselineItem?.score !== undefined &&
-        cultureItem?.score !== null &&
-        cultureItem?.score !== undefined
-          ? { scoreDelta: round(cultureItem.score - baselineItem.score) }
-          : {}),
       }
     })
     .filter(
       (item) =>
-        item.baselineRank !== item.cultureInformedRank ||
-        (item.scoreDelta !== undefined && item.scoreDelta !== 0)
+        item.baselineRank !== item.cultureInformedRank
     )
   const denominator = Math.max(baseline.length, cultureInformed.length, 1)
   return {

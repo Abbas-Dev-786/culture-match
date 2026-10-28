@@ -6,7 +6,7 @@ This file is generated from sanitized spike output. A field is not considered su
 
 ## Qloo
 
-Status: response_captured_needs_manual_review
+Status: location-tag-live-smoke-passed; person-validation-live-smoke-returned-no-usable-entities
 
 | Path | Types | Occurrences |
 | --- | --- | --- |
@@ -37,7 +37,7 @@ Status: response_captured_needs_manual_review
 
 ## Apify / Influship
 
-Status: response_captured_needs_manual_review
+Status: one capped live smoke run reviewed on 2026-10-27; actor returned bio and provider match fields only
 
 Documented actor input contract from the current public schema:
 
@@ -112,5 +112,8 @@ Documented actor output areas:
 | engagement rate | supported | Numeric provider field with documented percentage units |
 | language | unavailable | Never infer from market or query |
 | audience geography | unavailable; provider explicitly marks location as unverified | Creator residence is insufficient |
-| fees/budget fit | unavailable | Never infer a fee from follower count |
+| fees | unavailable unless explicitly returned | Never infer a creator fee |
 | provider match score | supported / provider-derived signal | Do not double-count when Qloo terms feed the query |
+| growth momentum | unavailable unless returned in the observed payload | Never infer from follower count or posting history |
+| posting consistency | unavailable unless returned in the observed payload | Never infer from content sample size |
+| budget fit | conditional rough proxy | Follower tier is not a creator fee or affordability guarantee |

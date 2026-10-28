@@ -144,6 +144,7 @@ export interface QlooHeatmap {
 export interface CreatorContentSignal {
   text: string
   sourceField: string
+  evidenceKind?: "bio" | "post_or_content"
   evidence: EvidenceRef
 }
 

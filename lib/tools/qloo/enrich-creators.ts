@@ -34,7 +34,10 @@ export async function enrichCreatorsWithQloo(
   )
 
   for (const [index, creator] of creators.entries()) {
-    if (index >= limit || creator.contentSignals.length === 0) {
+    const postContentSignals = creator.contentSignals.filter(
+      (signal) => signal.evidenceKind !== "bio" && signal.sourceField !== "$.creator.bio"
+    )
+    if (index >= limit || postContentSignals.length === 0) {
       enriched.set(
         creator.providerCreatorId,
         applyPersonMatch(creator, personMatches)
@@ -42,7 +45,7 @@ export async function enrichCreatorsWithQloo(
       continue
     }
 
-    const cacheKey = creator.contentSignals
+    const cacheKey = postContentSignals
       .map((signal) => signal.text.trim().toLocaleLowerCase())
       .join("|")
     const cached = cache.get(cacheKey)
@@ -56,7 +59,7 @@ export async function enrichCreatorsWithQloo(
 
     try {
       const resolved = await resolveTags(
-        extractCreatorTagQueries(creator.contentSignals).slice(0, 10),
+        extractCreatorTagQueries(postContentSignals).slice(0, 10),
         client
       )
       const resolvedTags = resolved.flatMap((tag) =>
@@ -149,9 +152,7 @@ async function discoverPersonMatches(
       const payload = await client.getInsights({
         filterType: "urn:entity:person",
         requestMethod: "POST",
-        filterTags: ["urn:tag:genre:person:influencer"],
         filterResultsEntitiesQuery: creator.name,
-        biasTrends: "high",
         tagSignals: campaignSignals
           .filter(
             (signal) =>
@@ -166,7 +167,7 @@ async function discoverPersonMatches(
         take: 1,
         explainability: true,
       })
-      const person = readPersonMatches(payload)[0]
+      const person = readPersonMatches(payload, creator.name)[0]
       if (person) matches.set(creator.providerCreatorId, person)
     } catch {
       continue
@@ -212,7 +213,7 @@ function applyPersonMatch(
   }
 }
 
-function readPersonMatches(payload: unknown): QlooPersonMatch[] {
+function readPersonMatches(payload: unknown, expectedName: string): QlooPersonMatch[] {
   if (!isRecord(payload) || !isRecord(payload.results)) return []
   const values = Array.isArray(payload.results.entities)
     ? payload.results.entities
@@ -222,6 +223,7 @@ function readPersonMatches(payload: unknown): QlooPersonMatch[] {
     const entityId = readString(value.entity_id) ?? readString(value.id)
     const name = readString(value.name)
     if (!entityId || !name) return []
+    if (normalizeEntityName(name) !== normalizeEntityName(expectedName)) return []
     const query = isRecord(value.query) ? value.query : value
     const affinity = readNumber(value.affinity) ?? readNumber(query.affinity)
     const popularity =
@@ -261,6 +263,10 @@ function readPersonMatches(payload: unknown): QlooPersonMatch[] {
       },
     ]
   })
+}
+
+function normalizeEntityName(value: string): string {
+  return value.trim().toLocaleLowerCase().replaceAll(/[^\p{L}\p{N}]+/gu, " ").trim()
 }
 
 function readTagAffinities(payload: unknown): Map<string, number> {

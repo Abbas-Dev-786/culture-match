@@ -457,12 +457,26 @@ async function scoreWorkflow(
     signals,
     cultureRows.map(normalizeStoredCreator)
   )
-  const cultureAblationScores = scoreCreators(
+  const cultureDiscoveryScores = scoreCreators(
     brief,
     signals,
     cultureRows.map(normalizeStoredCreator),
     undefined,
     { includeQlooResonance: false }
+  )
+  const cultureAblationScores = scoreCreators(
+    brief,
+    signals,
+    cultureRows.map(normalizeStoredCreator),
+    undefined,
+    { includeQlooResonance: false, normalization: "fixed" }
+  )
+  const cultureFixedScores = scoreCreators(
+    brief,
+    signals,
+    cultureRows.map(normalizeStoredCreator),
+    undefined,
+    { normalization: "fixed" }
   )
   const qlooMetrics = summarizeQlooCreatorSignals(
     cultureRows.map(normalizeStoredCreator)
@@ -470,10 +484,10 @@ async function scoreWorkflow(
   const comparison: BaselineComparison = {
     ...compareRuns(
     rankedCreators(baselineScores),
-    rankedCreators(cultureScores)
+    rankedCreators(cultureDiscoveryScores)
     ),
     qlooAblation: compareQlooAblation(
-      cultureScores,
+      cultureFixedScores,
       cultureAblationScores,
       qlooMetrics
     ),
@@ -709,7 +723,7 @@ function compareQlooAblation(
         withResult.score !== null && withoutResult.score !== null
           ? round(withResult.score - withoutResult.score)
           : undefined
-      if (withResult.rank === withoutResult.rank && !scoreDelta) return []
+      if (withResult.rank === withoutResult.rank) return []
       return [{
         providerCreatorId,
         withQlooRank: withResult.rank,

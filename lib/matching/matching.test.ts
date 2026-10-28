@@ -74,6 +74,14 @@ test("score math renormalizes over available components", () => {
     brief,
     signals,
     creator({
+      contentSignals: [
+        {
+          text: "Streetwear",
+          sourceField: "$.posts[0].caption",
+          evidenceKind: "post_or_content",
+          evidence: signals[0].evidence,
+        },
+      ],
       qlooSignals: [
         {
           signalId: "tag-1",
@@ -94,6 +102,36 @@ test("score math renormalizes over available components", () => {
     "unavailable",
   )
   assert.equal(result.caveats.includes("Audience geography is not verified; creator location is not audience evidence"), true)
+})
+
+test("fixed normalization makes Qloo ablation score deltas comparable", () => {
+  const scoredCreator = creator({
+    contentSignals: [
+      {
+        text: "Streetwear",
+        sourceField: "$.posts[0].caption",
+        evidenceKind: "post_or_content",
+        evidence: signals[0].evidence,
+      },
+    ],
+    qlooSignals: [
+      {
+        signalId: "tag-1",
+        kind: "tag",
+        name: "Streetwear",
+        types: ["urn:tag"],
+        affinity: 0.9,
+        inputWeight: 10,
+        sourceGroup: "creator",
+        evidence: signals[0].evidence,
+      },
+    ],
+  })
+  const withQloo = scoreCreator(brief, signals, scoredCreator, undefined, { normalization: "fixed" })
+  const withoutQloo = scoreCreator(brief, signals, scoredCreator, undefined, { includeQlooResonance: false, normalization: "fixed" })
+
+  assert.equal(withQloo.campaignFitScore, 44)
+  assert.equal(withoutQloo.campaignFitScore, 12.5)
 })
 
 test("content resonance takes precedence over person-level validation", () => {
@@ -158,6 +196,15 @@ test("baseline comparison handles no overlap and partial rank changes", () => {
   assert.deepEqual(comparison.baselineOnlyIds, ["a"])
   assert.deepEqual(comparison.cultureInformedOnlyIds, ["c"])
   assert.equal(comparison.materiallyChanged, true)
+})
+
+test("baseline comparison reports rank changes without incomparable score deltas", () => {
+  const comparison = compareRuns(
+    [{ providerCreatorId: "a", rank: 1, score: 80 }],
+    [{ providerCreatorId: "a", rank: 1, score: 90 }],
+  )
+
+  assert.deepEqual(comparison.rankChanges, [])
 })
 
 test("baseline comparison reports identical results honestly", () => {

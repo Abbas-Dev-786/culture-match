@@ -120,9 +120,9 @@ export function CultureLift({
                 <ArrowDown className="size-4" aria-hidden="true" />
               )
             }
-            label="Qloo score lift"
+            label="Fixed score delta"
             value={qlooLift === undefined ? "—" : formatDelta(qlooLift)}
-            detail="Average score, same creators"
+            detail="Same creators · fixed denominator"
             emphasis={qlooLift !== undefined && qlooLift !== 0}
           />
         </div>
@@ -133,7 +133,7 @@ export function CultureLift({
               <p className="font-medium">What did Qloo change?</p>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
                 {comparison.materiallyChanged
-                  ? `The cultural search introduced ${newDiscoveries.length} new ${newDiscoveries.length === 1 ? "creator" : "creators"} and changed ${rankShifts.length} shared ${rankShifts.length === 1 ? "rank" : "ranks"}.`
+                  ? `Discovery changed: the cultural search introduced ${newDiscoveries.length} new ${newDiscoveries.length === 1 ? "creator" : "creators"}. Ranking changed for ${rankShifts.length} shared ${rankShifts.length === 1 ? "creator" : "creators"}.`
                   : "The cultural signals did not materially change this shortlist. That is a valid result for this campaign."}
               </p>
             </div>
@@ -197,11 +197,12 @@ export function CultureLift({
               <div className="rounded-2xl border bg-muted/30 p-4 sm:p-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <p className="font-medium">Measured Qloo contribution</p>
+                    <p className="font-medium">Measured Qloo ranking contribution</p>
                     <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
                       The same culture-informed candidates were scored with and
-                      without Qloo resonance. This isolates Qloo&apos;s ranking
-                      effect from its discovery effect.
+                      without Qloo resonance using a fixed denominator. This
+                      isolates Qloo&apos;s ranking and component contribution from
+                      its discovery effect; it does not prove campaign performance.
                     </p>
                   </div>
                   <Badge
@@ -213,12 +214,14 @@ export function CultureLift({
                   >
                     {comparison.qlooAblation.materiallyChanged
                       ? "Ranking changed"
-                      : "Ranking unchanged"}
+                      : comparison.qlooAblation.averageScoreDelta !== 0
+                        ? "Score contribution changed"
+                        : "No ranking change"}
                   </Badge>
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-3">
                   <MiniMetric
-                    label="Average score lift"
+                    label="Fixed score delta"
                     value={formatDelta(comparison.qlooAblation.averageScoreDelta)}
                   />
                   <MiniMetric
@@ -234,6 +237,13 @@ export function CultureLift({
                     }
                   />
                 </div>
+                <AblationRankShiftList
+                  changes={comparison.qlooAblation.rankChanges}
+                  creators={creators}
+                />
+                <p className="mt-4 text-xs text-muted-foreground">
+                  Open a creator&apos;s scoring evidence in the shortlist to inspect each component&apos;s contribution and availability. Missing provider fields remain unavailable rather than being estimated.
+                </p>
               </div>
             ) : (
               <EmptyMessage label="No Qloo ablation data was recorded for this campaign." />
@@ -351,7 +361,7 @@ function RankShiftList({
       <div>
         <p className="font-medium">Rank shifts</p>
         <p className="mt-1 text-sm text-muted-foreground">
-          Shared creators whose position changed after cultural reranking.
+          Shared creators whose position changed between the two discovery shortlists.
         </p>
       </div>
       {changes.length > 0 ? (
@@ -392,6 +402,53 @@ function RankShiftList({
       ) : (
         <p className="mt-4 rounded-xl border border-dashed p-3 text-sm text-muted-foreground">
           {emptyLabel}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function AblationRankShiftList({
+  changes,
+  creators,
+}: {
+  changes: NonNullable<ComparisonView["qlooAblation"]>["rankChanges"]
+  creators: Map<string, CampaignMatchView>
+}) {
+  return (
+    <div className="mt-4 rounded-xl border bg-background/60 p-4">
+      <p className="font-medium">Qloo rank shifts</p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Same candidates, with and without cultural affinity enabled.
+      </p>
+      {changes.length > 0 ? (
+        <ul className="mt-3 grid gap-2">
+          {changes.map((change) => {
+            const creator = creators.get(change.providerCreatorId)
+            const movedUp =
+              (change.withQlooRank ?? 0) < (change.withoutQlooRank ?? 0)
+            return (
+              <li key={change.providerCreatorId} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+                <span className="min-w-0 truncate text-sm font-medium">
+                  {creatorLabel(creator, change.providerCreatorId)}
+                </span>
+                <span className="flex shrink-0 items-center gap-2 text-sm">
+                  <span className="text-muted-foreground">#{change.withoutQlooRank}</span>
+                  <span className="text-muted-foreground">→</span>
+                  <span className="font-semibold">#{change.withQlooRank}</span>
+                  {movedUp ? (
+                    <ArrowUp className="size-4 text-emerald-600" aria-label="Moved up with Qloo" />
+                  ) : (
+                    <ArrowDown className="size-4 text-amber-600" aria-label="Moved down with Qloo" />
+                  )}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      ) : (
+        <p className="mt-3 rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+          No creator changed rank when Qloo affinity was enabled.
         </p>
       )}
     </div>

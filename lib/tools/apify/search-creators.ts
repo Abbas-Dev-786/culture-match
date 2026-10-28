@@ -110,18 +110,33 @@ function normalizeCreator(
   const profileUrl = readString(profile.url)
   const followers = readNonNegativeNumber(profile.followers)
   const engagementRate = readEngagementRate(profile.engagement_rate)
-  const monthlyGrowthRate = readMetric(
-    [profile, creator, value],
+  const monthlyGrowth = readMetric(
+    [
+      { record: profile, path: "$.primary_profile" },
+      { record: creator, path: "$.creator" },
+      { record: value, path: "$" },
+    ],
     ["monthly_growth_rate", "monthlyGrowthRate", "growth_rate", "growthRate"],
   )
-  const postingFrequency = readMetric(
-    [profile, creator, value],
+  const postingFrequencyMetric = readMetric(
+    [
+      { record: profile, path: "$.primary_profile" },
+      { record: creator, path: "$.creator" },
+      { record: value, path: "$" },
+    ],
     ["posting_frequency", "postingFrequency", "posts_per_month", "postsPerMonth"],
   )
-  const estimatedFee = readMetric(
-    [profile, creator, value],
+  const estimatedFeeMetric = readMetric(
+    [
+      { record: profile, path: "$.primary_profile" },
+      { record: creator, path: "$.creator" },
+      { record: value, path: "$" },
+    ],
     ["estimated_fee", "estimatedFee", "fee", "rate"],
   )
+  const monthlyGrowthRate = monthlyGrowth?.value
+  const postingFrequency = postingFrequencyMetric?.value
+  const estimatedFee = estimatedFeeMetric?.value
   const languages = readLabelArray([profile, creator, value], ["languages", "language", "content_languages", "contentLanguages"])
   const audienceRegions = readLabelArray([profile, creator, value], ["audience_locations", "audienceLocations", "audience_regions", "audienceRegions"])
   const isVerified =
@@ -174,15 +189,15 @@ function normalizeCreator(
     )
   if (monthlyGrowthRate !== undefined)
     evidence.push(
-      fieldEvidence("$.primary_profile.monthly_growth_rate", observedAt, String(monthlyGrowthRate)),
+      fieldEvidence(monthlyGrowth?.fieldPath ?? "$.primary_profile.monthly_growth_rate", observedAt, String(monthlyGrowthRate)),
     )
   if (postingFrequency !== undefined)
     evidence.push(
-      fieldEvidence("$.primary_profile.posting_frequency", observedAt, String(postingFrequency)),
+      fieldEvidence(postingFrequencyMetric?.fieldPath ?? "$.primary_profile.posting_frequency", observedAt, String(postingFrequency)),
     )
   if (estimatedFee !== undefined)
     evidence.push(
-      fieldEvidence("$.primary_profile.estimated_fee", observedAt, String(estimatedFee)),
+      fieldEvidence(estimatedFeeMetric?.fieldPath ?? "$.primary_profile.estimated_fee", observedAt, String(estimatedFee)),
     )
   if (isVerified !== undefined)
     evidence.push(
@@ -261,6 +276,7 @@ function extractContentSignals(
     signals.push({
       text: bio,
       sourceField: "$.creator.bio",
+      evidenceKind: "bio",
       evidence: fieldEvidence("$.creator.bio", observedAt, bio),
     })
   }
@@ -283,6 +299,7 @@ function extractContentSignals(
       signals.push({
         text: excerpt,
         sourceField: `$.${collectionKey}[${index}]`,
+        evidenceKind: "post_or_content",
         evidence: fieldEvidence(
           `$.${collectionKey}[${index}]`,
           observedAt,
@@ -365,13 +382,13 @@ function readNumber(value: unknown): number | undefined {
 }
 
 function readMetric(
-  records: Array<Record<string, unknown>>,
+  records: Array<{ record: Record<string, unknown>; path: string }>,
   keys: string[],
-): number | undefined {
-  for (const record of records) {
+): { value: number; fieldPath: string } | undefined {
+  for (const { record, path } of records) {
     for (const key of keys) {
       const value = readNonNegativeNumber(record[key])
-      if (value !== undefined) return value
+      if (value !== undefined) return { value, fieldPath: `${path}.${key}` }
     }
   }
   return undefined

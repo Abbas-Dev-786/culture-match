@@ -19,7 +19,7 @@ const stages: Array<{
 }> = [
   { key: "queued", label: "Campaign received", description: "Waiting to start" },
   { key: "researching_culture", label: "Researching market culture", description: "Resolving references and Qloo signals" },
-  { key: "searching_creators", label: "Searching creators", description: "Running baseline and culture-informed searches" },
+  { key: "searching_creators", label: "Searching creators", description: "Running broad discovery and evaluating optional refinement" },
   { key: "scoring", label: "Scoring recommendations", description: "Normalizing evidence and calculating fit" },
   { key: "generating_report", label: "Generating report", description: "Preparing explanations and hypotheses" },
 ]

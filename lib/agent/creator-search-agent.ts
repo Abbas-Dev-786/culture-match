@@ -254,6 +254,7 @@ export function creatorSearchStateToJson(
     rejectedActions: action.rejectedActions,
     refinementCount,
     budgetRemaining: Math.max(0, MAX_CREATOR_SEARCH_REFINEMENTS - refinementCount),
+    refinementEnabled: process.env.ENABLE_AGENTIC_CREATOR_REFINEMENT === "true",
     decision: action.decision,
     ...(action.decision === "accept" || action.decision === "stop_with_caveats"
       ? { stopReason: action.summary }

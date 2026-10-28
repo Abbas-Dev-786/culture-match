@@ -4,7 +4,7 @@
 
 **Depends on:** Phase 2 normalized provider data
 
-**Exit condition:** Every displayed match has deterministic components, evidence references, availability states, caveats, and an honest baseline comparison.
+**Exit condition:** Every displayed match has deterministic components, evidence references, availability states, caveats, and an honest broad/refinement comparison.
 
 ## Build order
 
@@ -26,9 +26,9 @@ Create `lib/matching/evidence.ts`. Build evidence references while normalizing d
 
 Create `lib/matching/score-creators.ts` and a versioned score configuration. Implement each component independently, then implement weighted renormalization. Return structured unavailable states instead of zero scores.
 
-### P3-04 — Implement baseline comparison
+### P3-04 — Implement broad/refinement comparison
 
-Create `lib/matching/compare-runs.ts`. Compare candidate identity, rank, score, and evidence between baseline and culture-informed runs. Support no-overlap, partial-overlap, and identical-result cases.
+Create `lib/matching/compare-runs.ts`. Compare candidate identity, rank, score, and evidence between broad discovery and optional refinement runs. Support no-overlap, partial-overlap, and identical-result cases; identical initial slots are valid when no refinement runs.
 
 ### P3-05 — Implement report generation
 
@@ -114,14 +114,14 @@ Use the strongest available evidence in this order:
 2. Transparent lexical similarity between returned Qloo labels and supported creator text.
 3. A clearly labeled derived embedding similarity only if the team chooses and documents it.
 
-The cultural component must not be treated as audience-level cultural affinity unless an actual audience-level source exists. Do not reuse an Apify semantic query score as an independent cultural score when Qloo-derived terms were included in the same query.
+The cultural component must not be treated as audience-level cultural affinity unless an actual audience-level source exists. Do not reuse an Apify semantic query score as an independent cultural score when Qloo-derived terms were included in an optional refinement query. Broad discovery remains the recall-oriented source of truth.
 
-## 5. Implement baseline comparison
+## 5. Implement broad/refinement comparison
 
-Run two searches under the same campaign constraints:
+Compare these candidate sources under the same campaign constraints:
 
-- **Baseline:** explicit campaign criteria without Qloo-derived terms.
-- **Culture-informed:** explicit campaign criteria plus validated Qloo signals.
+- **Broad discovery:** explicit campaign criteria without Qloo-derived terms. This always runs first.
+- **Optional refinement:** explicit campaign criteria plus the agent-selected strategy. This runs at most once and only when enabled and justified.
 
 Store comparison metadata:
 
@@ -130,9 +130,9 @@ Store comparison metadata:
 - Rank changes.
 - Score changes.
 - Evidence supporting significant changes.
-- Whether the culture-informed run materially changed the shortlist.
+- Whether refinement materially changed the shortlist and why the critic requested it.
 
-If the lists are substantially similar, report that honestly. Similarity is a valid result.
+If no refinement runs, or if the lists are substantially similar, report that honestly. Similarity and no-refinement are valid results.
 
 ## 6. Add structured model outputs
 
@@ -171,7 +171,7 @@ Persist:
 - Evidence completeness.
 - Explanation and caveats.
 - Campaign concept, if generated.
-- Baseline comparison metadata.
+- Broad/refinement comparison metadata, including the critic decision and no-refinement reason.
 
 Results must be reproducible from stored normalized inputs and configuration.
 
@@ -182,7 +182,7 @@ Results must be reproducible from stored normalized inputs and configuration.
 - Unavailable components do not reduce the score through a false zero.
 - Evidence completeness is not equal to match score.
 - Audience geography and language remain unavailable when absent.
-- Baseline comparison handles zero overlap and full overlap.
+- Broad/refinement comparison handles zero overlap, full overlap, and no refinement.
 - Model output cannot add unsupported creator facts.
 - Prompt-injection fixture text is treated as data, not instructions.
 - Re-running the same stored inputs produces the same deterministic scores.
@@ -192,7 +192,7 @@ Results must be reproducible from stored normalized inputs and configuration.
 - Provider-to-domain normalizers.
 - Evidence builder.
 - Deterministic scoring engine.
-- Baseline comparison engine.
+- Broad/refinement comparison engine.
 - Report and campaign-concept schemas.
 - Evidence-grounded prompts and validation.
 - Persistence for matches and comparison metadata.
@@ -201,7 +201,7 @@ Results must be reproducible from stored normalized inputs and configuration.
 
 - [ ] At least one candidate has a complete evidence-linked score breakdown.
 - [ ] At least one candidate shows missing or unavailable fields honestly.
-- [ ] Baseline and culture-informed lists render as comparable data.
+- [ ] Broad and optional refinement lists render as comparable data.
 - [ ] Score algorithm version is stored.
 - [ ] AI concepts are marked as hypotheses.
 - [ ] Deterministic scoring tests pass.

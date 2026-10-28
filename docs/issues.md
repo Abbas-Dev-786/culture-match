@@ -1,23 +1,23 @@
-## Major blockers
+## Known issues and current limitations
 
-1. Database migrations are inconsistent.
+This file is a living audit of issues found during implementation. Items below distinguish resolved workflow risks from limitations that still need live-provider or deployment validation.
 
-The application uses the schema in lib/db/migrations/0001_foundation.sql (/C:/Users/abbas/Desktop/culture-match/lib/db/migrations/0001_foundation.sql:42), but the actual Supabase migration folder contains an older incompatible schema using fields such as current_stage, target_demographics, handle, and audience_size in supabase/migrations/20261023053521_foundation.sql (/C:/Users/abbas/Desktop/culture-match/supabase/migrations/20261023053521_foundation.sql:42).
+1. Database migrations need one canonical deployment path.
 
-The README also instructs users to apply the nonstandard lib/db/migrations path README.md (/C:/Users/abbas/Desktop/culture-match/README.md:28). A clean Supabase deployment can therefore fail or run against the wrong schema.
+The application uses the schema in `lib/db/migrations/0001_foundation.sql`, while the Supabase migration folder may contain an older incompatible schema. The README now points to the canonical deployment path, but a clean Supabase deployment should still verify migration history, schema compatibility, RLS, and policies before production use.
 
-2. The workflow is not safely production-oriented.
+2. The workflow needs production deployment validation.
 
-The analyze route executes Qloo, optional AI generation, and two Apify runs directly inside one request app/api/campaigns/[id]/analyze/route.ts (/C:/Users/abbas/Desktop/culture-match/app/api/campaigns/[id]/analyze/route.ts:31). On serverless hosting, that can exceed the function timeout and leave runs stuck in a running state.
+The earlier implementation executed Qloo, optional AI generation, and two Apify runs directly inside one request. The current workflow advances persisted stages, starts one broad Apify run, and can launch at most one bounded refinement run through the agentic path. Deployment still needs validation for function limits, callback/polling recovery, and long-running provider behavior.
 
-It needs a durable queue/worker or a clearly split asynchronous workflow.
+The current persisted workflow is the split asynchronous path; a durable queue/worker may still be required for production scale.
 
-3. The authentication session middleware is not wired.
+3. Authentication session refresh needs deployment verification.
 
-There is an updateSession helper in lib/middleware.ts (/C:/Users/abbas/Desktop/culture-match/lib/middleware.ts:4), but no root middleware.ts or proxy.ts. The API still checks authentication, but session refresh and redirect behavior may become unreliable after token expiry.
+The API checks authentication and the repository contains an `updateSession` helper, but session refresh and redirect behavior still need verification in the deployed Next.js runtime.
 
-4. The “cultural matching” score is currently weak.
+4. Cultural matching remains evidence-limited.
 
-Cultural alignment is calculated using lexical overlap between Qloo signal names and the creator’s bio lib/matching/score-creators.ts (/C:/Users/abbas/Desktop/culture-match/lib/matching/score-creators.ts:90). Audience geography, language, fees, and actual cultural audience affinity are unavailable.
+Cultural alignment now uses Qloo enrichment and observed creator-content evidence where available, with an explicit Qloo ablation. Audience geography, language, fees, and actual cultural audience affinity may still be unavailable depending on the Apify payload.
 
-That makes this primarily a keyword-based creator-ranking tool, not yet a reliable cultural-intelligence product.
+The product must continue to label unavailable evidence and avoid claiming cultural identity, audience geography, or ROI from inference.

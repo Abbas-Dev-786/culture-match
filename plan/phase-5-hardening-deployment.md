@@ -43,7 +43,7 @@ Check the official rules, public demo availability, repository visibility, sourc
 - Qloo and Apify normalizers.
 - Score math and weight renormalization.
 - Evidence completeness.
-- Baseline comparison.
+- Broad/refinement comparison, including the no-refinement state.
 - Report-output validation.
 
 ### Contract and integration tests
@@ -64,7 +64,7 @@ Check the official rules, public demo availability, repository visibility, sourc
 5. Confirm Qloo signals are visible with provenance.
 6. Confirm real or approved fixture-backed creator results appear.
 7. Confirm deterministic score breakdowns and evidence labels.
-8. Compare baseline and culture-informed rankings.
+8. Compare broad discovery with the optional refinement result, or confirm the UI honestly reports that no refinement was justified.
 9. Refresh during processing and confirm no duplicate run.
 10. Trigger or simulate a provider failure and confirm safe retry.
 11. Export or print client-safe results.
@@ -91,7 +91,7 @@ Check the official rules, public demo availability, repository visibility, sourc
 - Confirm duplicate requests are idempotent.
 - Confirm long Apify runs do not depend on a browser session.
 - Confirm interrupted workflow recovery.
-- Confirm empty Qloo results produce a transparent limitation or labeled baseline-only mode.
+- Confirm empty Qloo results produce a transparent limitation and do not claim that refinement was Qloo-informed.
 - Confirm fewer-than-requested candidates are reported as a limited sample.
 - Confirm raw payload retention and cleanup behavior.
 - Confirm health/status diagnostics do not expose credentials.
@@ -112,7 +112,7 @@ Track:
 
 - Qloo success, latency, usable-signal count, and schema errors.
 - Apify run counts, completion/failure, latency, result count, and cost when available.
-- Baseline/culture-informed overlap and rank changes.
+- Broad/refinement overlap and rank changes, including the no-refinement case.
 - Component availability and evidence completeness.
 - Model validation failures and token usage when available.
 
@@ -128,6 +128,8 @@ Configure server-side secrets in the deployment provider:
 - Apify token.
 - Model provider key and model ID.
 - Supabase server credentials.
+
+For the bounded agentic path, also configure `ENABLE_AGENTIC_DECISIONS`, `ENABLE_AGENTIC_CREATOR_REFINEMENT`, and `AGENTIC_REQUIRE_APPROVAL` according to the deployment policy. Keep the creator-search refinement capped at one additional provider run per analysis.
 
 Configure only genuinely public values with a public environment prefix. Verify preview and production environments separately.
 
@@ -168,13 +170,13 @@ Resolve the TDD references to `architecture.png` and `sequence.png` by adding th
 
 ## 7. Demo preparation
 
-Prepare a short, deterministic walkthrough:
+Prepare a short, repeatable walkthrough:
 
 1. Enter a global-brand campaign brief targeting the selected India-focused market.
 2. Show Qloo reference resolution and market signals.
 3. Show asynchronous creator discovery.
 4. Show evidence-linked ranking cards.
-5. Show baseline versus culture-informed results.
+5. Show broad discovery versus optional refinement, including the honest no-refinement state when the critic stops.
 6. Open a candidate and show missing-data labels.
 7. Show an AI campaign concept explicitly marked as a hypothesis.
 8. State limitations and explain that the product is globally extensible but only tested markets are supported.

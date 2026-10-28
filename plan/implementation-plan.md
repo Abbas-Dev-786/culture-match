@@ -13,7 +13,7 @@ Build and deploy a working MVP that:
 1. Accepts a campaign brief for a validated country, region, or city.
 2. Resolves campaign references and researches market signals through Qloo.
 3. Discovers creator candidates through the Influship Apify actor.
-4. Compares a baseline creator search with a Qloo-informed search.
+4. Starts with broad creator discovery and optionally compares it with one agent-selected refinement search.
 5. Scores candidates deterministically from available evidence.
 6. Separates verified facts, provider-derived signals, and AI-generated hypotheses.
 7. Shows missing or unverified fields instead of inventing them.
@@ -43,7 +43,7 @@ The first public demonstration should use one India-focused market. The implemen
 - Instagram creator discovery through the configured Apify actor.
 - Qloo entity resolution and one validated location/taste query.
 - Asynchronous Apify execution with persisted run state.
-- Normalization, deterministic scoring, evidence references, and baseline comparison.
+- Normalization, Qloo enrichment, deterministic scoring, evidence references, critic decisions, and broad/refinement comparison.
 - Campaign form, progress state, results dashboard, and candidate detail view.
 - Safe retry behavior, input validation, secret protection, and deployment documentation.
 
@@ -65,8 +65,8 @@ The first public demonstration should use one India-focused market. The implemen
 | Provider adapters | Qloo and Apify authentication, requests, parsing, retries, fixtures | Tested provider clients |
 | Workflow orchestration | State machine, idempotency, asynchronous jobs, recovery | Resumable analysis run |
 | Persistence | Campaigns, runs, signals, candidates, matches, provenance | Secure database schema and migrations |
-| Matching | Normalization, score components, evidence completeness, ranking | Deterministic scoring engine |
-| Agent layer | Search-plan and report generation within narrow tool boundaries | Schema-validated model outputs |
+| Matching | Normalization, score components, evidence completeness, ranking | Deterministic scoring engine with Qloo ablation |
+| Agent layer | Research supervisor, creator-search critic/refinement, evidence critic, and report generation within narrow tool boundaries | Persisted schema-validated agent state and traces |
 | Experience | Campaign form, progress, results, comparison, export | Responsive dashboard |
 | Delivery | Tests, observability, deployment, README, demo | Public working submission |
 
@@ -77,7 +77,7 @@ The first public demonstration should use one India-focused market. The implemen
 | 0 | Feasibility spike and decisions | None | One real Qloo result and one real Apify result are captured and mapped without fabricated fields. |
 | 1 | Foundation and secure persistence | Phase 0 decisions | App shell, migrations, RLS, domain contracts, and workflow skeleton pass tests. |
 | 2 | Provider adapters and analysis workflow | Phases 0–1 | A campaign can execute Qloo and Apify asynchronously with persisted status and safe retries. |
-| 3 | Matching, evidence, and agent outputs | Phase 2 fixtures and normalized data | Results are deterministically scored, explainable, and baseline-comparable. |
+| 3 | Matching, evidence, and agent outputs | Phase 2 fixtures and normalized data | Results are deterministically scored, explainable, and comparable across broad discovery, optional refinement and ablation. |
 | 4 | Product experience and export | Phase 3 contracts | A tester can submit a campaign and understand the first recommendations without developer help. |
 | 5 | Hardening, deployment, and submission | Phases 1–4 | Public demo, repository, tests, security review, and submission materials are complete. |
 
@@ -126,7 +126,7 @@ Keep each provider behind a single adapter. UI components must consume applicati
 | 0 | Decision log, validated market config, sanitized Qloo/Apify fixtures, provider field matrix |
 | 1 | Project bootstrap, domain schemas, migrations, RLS/policies, state machine, API skeleton |
 | 2 | Qloo client, Apify client, workflow runner, retries, idempotency, status/retry endpoints |
-| 3 | Normalizers, evidence builder, scoring engine, baseline comparison, report schemas |
+| 3 | Normalizers, evidence builder, scoring engine, broad/refinement comparison, report schemas |
 | 4 | Campaign form, progress UI, culture profile, creator cards, comparison, safe export |
 | 5 | Full test suite, security review, deployment config, README, demo script, release checklist |
 
@@ -151,7 +151,7 @@ A phase is complete only when its code, tests, fixtures, documentation, and acce
 - A successful run stores provider provenance and normalized records.
 - A failed run shows a safe message and a bounded retry path.
 - Every displayed score has component values, availability, rationale, and evidence references.
-- Baseline and culture-informed results can be compared even when they are similar.
+- Broad discovery and optional refinement results can be compared; if refinement is not justified, the system reports that no second search was run.
 - AI-generated concepts are clearly labeled hypotheses and schema-validated.
 - No secrets, raw credentials, or unnecessary provider payloads reach the client.
 - RLS, policies, grants, and service-role usage have been reviewed.
@@ -167,6 +167,6 @@ A phase is complete only when its code, tests, fixtures, documentation, and acce
 
 ## 11. Delivery priorities under time pressure
 
-Protect Phase 0, provider adapters, deterministic scoring, evidence display, and the end-to-end demo path. Cut PDF export, bookmarks, multi-market comparison, advanced agent loops, and cosmetic dashboard work before cutting validation, provenance, retries, or security.
+Protect Phase 0, provider adapters, broad discovery, Qloo enrichment, evidence display, bounded agent loops, and the end-to-end demo path. Cut PDF export, bookmarks, multi-market comparison, and cosmetic dashboard work before cutting validation, provenance, retries, or security.
 
 The missing `architecture.png` and `sequence.png` files referenced by the TDD should be added during documentation hardening or the references should be removed before the repository is published.

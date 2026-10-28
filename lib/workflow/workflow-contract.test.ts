@@ -38,18 +38,18 @@ const signal: CultureSignal = {
   },
 }
 
-test("search plans preserve campaign constraints and distinguish variants", () => {
+test("initial search plans preserve campaign constraints and start broad", () => {
   const plans = createDeterministicSearchPlans(brief, [signal])
   assert.equal(plans.baseline.variant, "baseline")
   assert.equal(plans.cultureInformed.variant, "culture_informed")
-  assert.notEqual(plans.baseline.query, plans.cultureInformed.query)
+  assert.equal(plans.baseline.query, plans.cultureInformed.query)
   assert.equal(plans.cultureInformed.minFollowers, 10_000)
   assert.equal(plans.cultureInformed.maxResults, 5)
   assert.match(plans.cultureInformed.query, /female audience/)
   assert.match(plans.cultureInformed.query, /younger audience/)
   assert.deepEqual(plans.queryConstruction.baseline.qlooTerms, [])
-  assert.deepEqual(plans.queryConstruction.cultureInformed.qlooTerms, ["Hindi Cinema"])
-  assert.deepEqual(plans.queryConstruction.cultureInformed.qlooSignalIds, ["tag-1"])
+  assert.deepEqual(plans.queryConstruction.cultureInformed.qlooTerms, [])
+  assert.deepEqual(plans.queryConstruction.cultureInformed.qlooSignalIds, [])
   assert.doesNotMatch(plans.baseline.query, /Hindi Cinema/)
 })
 

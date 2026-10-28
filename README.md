@@ -1,17 +1,18 @@
 # CultureMatch
 
-CultureMatch helps marketers compare a normal creator search with a culture-informed search for a regional campaign.
+CultureMatch helps marketers discover creators for regional campaigns using broad search, Qloo cultural enrichment, and an optional agent-selected refinement search.
 
 ## Workflow
 
 1. Submit a campaign brief.
 2. Resolve cultural references and research regional taste signals with Qloo.
-3. Build baseline and culture-informed Instagram search plans.
-4. Run both searches through the Influship influencer-search actor on Apify.
-5. Normalize creators and calculate deterministic campaign-fit scores.
-6. Compare shortlist overlap and rank changes.
-7. Optionally generate evidence-grounded creator concepts through OpenRouter.
-8. Revisit campaigns from private history, save searches, and inspect Qloo trends.
+3. Build a broad Instagram creator-search plan from campaign constraints.
+4. Run the broad search through the Influship influencer-search actor on Apify.
+5. Enrich creators with Qloo cultural evidence and let the critic decide whether one refinement search is justified.
+6. Normalize creators and calculate deterministic campaign-fit scores.
+7. Compare broad and optional refinement shortlist overlap and rank changes.
+8. Optionally generate evidence-grounded creator concepts through OpenRouter.
+9. Revisit campaigns from private history, save searches, and inspect Qloo trends.
 
 The analysis is a ranking aid, not a validated prediction of sales, conversions, or ROI. Audience geography and creator fees are reported as unavailable when the providers do not supply them.
 
@@ -24,7 +25,7 @@ pnpm install
 copy lib\\phase-0\\env.example .env.local
 ```
 
-Configure Supabase, Qloo, and Apify server credentials in `.env.local`. OpenRouter is optional and only used when both `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` are set with the relevant feature flag enabled.
+Configure Supabase, Qloo, and Apify server credentials in `.env.local`. OpenRouter is optional and only used when both `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` are set with the relevant feature flag enabled. Broad discovery is the default; set `ENABLE_AGENTIC_DECISIONS=true` and `ENABLE_AGENTIC_CREATOR_REFINEMENT=true` to enable model-selected refinement actions.
 
 Apply the SQL migrations in `supabase/migrations` to the Supabase project before running a campaign. The `lib/db/migrations` directory is retained as the reviewed SQL source used by the migration tests; new deployments should use the canonical Supabase folder.
 

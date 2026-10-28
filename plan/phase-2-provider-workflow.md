@@ -104,12 +104,12 @@ Implement a bounded workflow with these stages:
 2. Resolve brand and cultural references.
 3. Execute validated Qloo research.
 4. Store normalized culture signals.
-5. Build and validate the creator-search plan.
-6. Start one Apify run using the idempotency key.
+5. Build and validate the broad creator-search plan without raw Qloo signal terms.
+6. Start one broad Apify run using the idempotency key.
 7. Advance status through internal polling, webhook, or the selected background mechanism.
 8. Read and normalize dataset items.
 9. Hand off to scoring.
-10. Generate the report only after deterministic results exist.
+10. Let the critic decide whether one bounded refinement search is justified, then generate the report only after scored results exist.
 
 The workflow must be safe to resume after a process restart. Each stage should be idempotent or guarded by a persisted stage result.
 
@@ -134,15 +134,15 @@ For every retry, record attempt count, delay class, provider error code, and saf
 
 ## 5. Implement the search-plan boundary
 
-If an LLM is used to formulate the creator query:
+For broad discovery and optional agent-selected refinement:
 
 - Provide only normalized campaign data and verified Qloo signals.
 - Restrict output to a schema containing query text and supported actor filters.
 - Reject unsupported filters and URLs.
 - Do not let the model alter credentials, headers, endpoints, limits, or database writes.
-- Keep a deterministic fallback query for model failure.
+- Preserve campaign constraints and allow at most one additional refinement search.
 
-The baseline query must use the same explicit campaign constraints without Qloo-derived terms. The culture-informed query may add only the validated cultural signals selected by the workflow.
+The initial query uses explicit campaign constraints without Qloo-derived terms. Qloo signals may be translated into a refinement query only when the creator-search agent selects `add_cultural_signals` and `ENABLE_AGENTIC_CREATOR_REFINEMENT=true`. The selected signal IDs, query, result count, and critic decision must be persisted.
 
 ## 6. Implement application status and recovery
 
@@ -169,7 +169,8 @@ On refresh or reconnect, the UI should resume from the persisted status. On fail
 - Retries stop at the configured limit.
 - Browser status polling never invokes actor start.
 - Provider secrets never appear in logs, serialized errors, or client responses.
-- A model-generated search plan cannot introduce unsupported filters.
+- A model-generated action cannot introduce unsupported filters, URLs, signal IDs, or weakened campaign constraints.
+- Broad discovery remains valid when agentic refinement is disabled.
 
 ## Deliverables
 
@@ -177,7 +178,7 @@ On refresh or reconnect, the UI should resume from the persisted status. On fail
 - Apify adapter.
 - Workflow runner and stage transitions.
 - Retry and timeout utilities.
-- Search-plan schema and deterministic fallback.
+- Broad search-plan schema, agent action schema, and bounded refinement plan.
 - Status and retry endpoints.
 - Integration fixtures and tests.
 
@@ -189,4 +190,6 @@ On refresh or reconnect, the UI should resume from the persisted status. On fail
 - [ ] Workflow status survives process/page interruption.
 - [ ] Provider failures are classified and safely surfaced.
 - [ ] Duplicate requests do not create duplicate jobs.
-- [ ] Baseline and culture-informed search plans are distinguishable.
+- [ ] Broad discovery starts with one Apify run and no Qloo query terms.
+- [ ] Optional refinement is bounded to one run and preserves campaign constraints.
+- [ ] Agent action, selected signal IDs, critic outcome, and tool results are persisted.

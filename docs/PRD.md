@@ -12,11 +12,11 @@
 
 ## 1. Executive summary
 
-CultureMatch helps a brand or marketer identify creator partnerships for a specific regional campaign. The user enters a product, target market, campaign goal, budget range, language needs, demographic conditioning and cultural references. CultureMatch uses Qloo to investigate supported taste and location signals, runs paired baseline and culture-informed searches through the Influship influencer-search actor on Apify, and applies a transparent matching process to rank candidates and generate evidence-grounded campaign concepts.
+CultureMatch helps a brand or marketer identify creator partnerships for a specific regional campaign. The user enters a product, target market, campaign goal, budget range, language needs, demographic conditioning and cultural references. CultureMatch uses Qloo to investigate supported taste and location signals, runs a broad creator search through the Influship influencer-search actor on Apify, enriches the returned creators with Qloo evidence, and may run one agent-selected refinement search when the initial result set has a concrete gap.
 
-CultureMatch is not merely a natural-language wrapper around influencer search. Its differentiator is the *regional cultural research and reranking layer*: Qloo informs the creator-search strategy and the reasons presented in the final ranking. Creator discovery metrics come from Apify's actual returned dataset; cultural insights come from Qloo's actual responses; the model synthesizes these inputs but cannot invent either.
+CultureMatch is not merely a natural-language wrapper around influencer search. Its differentiator is the *regional cultural research and enrichment layer*: Qloo informs cultural interpretation, creator evidence, ranking, and—only when justified—an optional refinement search. Creator discovery metrics come from Apify's actual returned dataset; cultural insights come from Qloo's actual responses; the model synthesizes these inputs but cannot invent either.
 
-**MVP target:** a working, hosted product for a narrow, demonstrable campaign scenario in one or two validated global markets and one product category, with India as the initial demonstration focus. It must compare a baseline creator search with a Qloo-informed search and show where the cultural analysis changed—or did not materially change—the recommendations.
+**MVP target:** a working, hosted product for a narrow, demonstrable campaign scenario in one or two validated global markets and one product category, with India as the initial demonstration focus. It must show broad discovery, Qloo enrichment, critic decisions, and where an optional refinement changed—or did not materially change—the recommendations.
 
 ## 2. Problem statement
 
@@ -68,7 +68,7 @@ Enterprise influencer procurement, campaign payments, contract management, multi
 1. Accept a structured campaign brief in under five minutes.
 2. Retrieve live Qloo results and live Apify creator results for a supported campaign.
 3. Produce a ranked shortlist with transparent component scores and evidence notes.
-4. Make a baseline-vs-culture-informed comparison visible to the user.
+4. Make broad-vs-refinement comparison visible when a refinement search runs, while honestly showing identical results when no refinement is justified.
 5. Generate a specific campaign angle for each shortlisted creator using only supplied evidence and clearly labeled hypotheses.
 6. Deploy a public demo and publish a reproducible source-code repository with an open-source license, consistent with the hackathon submission rules.
 
@@ -97,7 +97,7 @@ Stage one is pass/fail: the project must fit the agentic theme and meaningfully 
 
 | Official criterion | How CultureMatch demonstrates it |
 |---|---|
-| Technological implementation | Real Qloo entity/taste/location research; Qloo signals feed the creator-search and matching pipeline; baseline comparison demonstrates its contribution. |
+| Technological implementation | Real Qloo entity/taste/location research; Qloo evidence feeds enrichment, matching, and optional agent-selected refinement; comparison demonstrates its contribution. |
 | Design | Complete workflow from campaign brief to culture profile, creator shortlist, score breakdown and campaign concept. |
 | Potential impact | Global D2C brands, agencies and campaign marketers selecting creators for regional launches; demonstrate the workflow first with an India-focused market and transparent limitations. |
 | Quality of the idea | Non-obvious use of cultural affinities to inform influencer/creator matching rather than generic influencer discovery. |
@@ -111,10 +111,10 @@ Submission gates: provide a functional public demo URL, a public code repository
 3. **Resolve Qloo inputs:** search brand and reference names as brand entities with spelling retries. Unresolved entity inputs immediately try scoped tag search and remain explicitly unresolved as entities; a usable tag fallback can still contribute to cultural research.
 4. **Resolve cultural tags:** expand product and reference text into search terms, then call Qloo tag search with typo tolerance, semantic search and relevant tag namespaces. Exact matches are preferred; otherwise the ranked semantic result is retained with provider-reported evidence.
 5. **Research the market:** execute five Qloo Taste Analysis layers—market, brand, product, reference and combined—using `filter.type=urn:tag`, `signal.location.query`, scoped tag types and centralized age serialization. Uniform entity weights use the documented scalar GET parameter; distinct per-entity weights use a POST body. The combined tag operator is `union` for sparse inputs and `intersection` only when at least five tags resolve.
-6. **Build paired creator searches:** construct deterministic baseline and culture-informed plans. The culture-informed plan includes the strongest verified Qloo signals; an optional structured model plan can replace it when enabled and valid. Start one Apify run for each plan, persist provider run/dataset IDs, and poll them asynchronously.
+6. **Discover creators broadly:** construct a campaign-constrained broad plan without raw Qloo signal keywords. Start one Apify run, persist the provider run/dataset IDs, and poll it asynchronously. After enrichment, the creator-search agent may select one refinement action when enabled and justified.
 7. **Normalize and enrich creators:** normalize only fields present in Apify payloads. Add location-conditioned Qloo content affinity from resolved creator tags. For creators with names, run a separate POST person validation using `filter.results.entities.query`, campaign tags, demographic conditioning and `bias.trends=high`; do not send person location signals or locally match names.
-8. **Score and compare:** calculate baseline scores with Qloo resonance disabled, culture-informed scores with Qloo enabled, and a culture-run ablation without Qloo. Persist component evidence, unavailable fields, overlap, rank changes, score deltas and Qloo contribution metrics.
-9. **Report and inspect:** optionally generate evidence-grounded reports for the top five culture-informed matches when model reporting is enabled. The deterministic score and evidence remain authoritative if model generation is disabled or fails. The dashboard shows status, culture profile, paired rankings, caveats and creator evidence.
+8. **Score and compare:** calculate broad-discovery scores with Qloo resonance disabled, refinement scores with Qloo enabled when a refinement exists, and a Qloo ablation without Qloo resonance. Persist component evidence, unavailable fields, overlap, rank changes, score deltas and Qloo contribution metrics.
+9. **Report and inspect:** optionally generate evidence-grounded reports for the top five enriched/refined matches when model reporting is enabled. The deterministic score and evidence remain authoritative if model generation is disabled or fails. The dashboard shows status, culture profile, agent trace, critic outcome, rankings, caveats and creator evidence.
 10. **Export/share:** allow CSV export and print-friendly review without secrets or retained raw provider payloads.
 
 ## 7. Functional requirements
@@ -127,13 +127,13 @@ Priority notation: **P0** = required for submission; **P1** = important if time 
 | FR-02 | Persist campaign and analysis run | P0 | A campaign receives a stable ID; stage/status and timestamps persist across refreshes. |
 | FR-03 | Qloo entity and tag resolution | P0 | Backend resolves brand/reference entities with spelling retries, falls back to scoped tag search when entity resolution fails, and surfaces ambiguity or unresolved status without inventing an entity. |
 | FR-04 | Five-layer regional taste research | P0 | Backend runs market, brand, product, reference and combined Qloo Taste Analysis layers with scoped tag types, centralized age normalization, safe weighting and sparse-tag operator rules; normalized signals and provider provenance are traceable. Retaining raw payloads is optional and time-limited. |
-| FR-05 | Paired creator search with Apify | P0 | Backend creates validated baseline and culture-informed plans, starts one `influship/influencer-search` run per plan with idempotency protection, persists run/dataset IDs and polls asynchronously. |
+| FR-05 | Broad creator search with optional refinement | P0 | Backend creates a validated broad plan without raw Qloo keywords, starts one `influship/influencer-search` run with idempotency protection, persists run/dataset IDs, and may start at most one critic-approved refinement search when `ENABLE_AGENTIC_CREATOR_REFINEMENT=true`. |
 | FR-06 | Asynchronous actor status | P0 | Frontend polls campaign status; polling does not start duplicate actor runs. Terminal success/failure is displayed. |
 | FR-07 | Creator normalization | P0 | Each result is mapped into a stable internal schema; unknown fields and source payload are retained safely where useful. |
 | FR-08 | Deterministic match score | P0 | Every score is computed by code from declared inputs, with component values and missing-data notes exposed. |
 | FR-09 | Evidence-grounded explanation | P0 | Each recommendation identifies which actual Qloo signals and creator fields support it; no unverified audience claims. |
-| FR-10 | Baseline comparison | P0 | Same campaign constraints can be run with a baseline Apify query and a culture-informed query; results and ranking changes are shown honestly. |
-| FR-11 | Evidence-grounded campaign report | P1 | When enabled, a model proposes creator-specific summaries, caveats and concepts for the top five culture-informed matches; output is schema-validated and evidence keys are checked. Deterministic results remain valid when disabled. |
+| FR-10 | Discovery comparison | P0 | The system compares broad discovery with an optional refinement when one runs; if no refinement is justified, identical comparison slots are reported honestly rather than implying a second search occurred. |
+| FR-11 | Evidence-grounded campaign report | P1 | When enabled, a model proposes creator-specific summaries, caveats and concepts for the top five enriched/refined matches; output is schema-validated and evidence keys are checked. Deterministic results remain valid when disabled. |
 | FR-12 | Retry and recoverability | P0 | Transient provider/network failures are retried within a limit; failed campaigns show a useful message and can be retried safely. |
 | FR-13 | Responsive results dashboard | P0 | User can view ranked creators, profiles, metrics, score breakdown and source/uncertainty labels on desktop and mobile widths. |
 | FR-14 | Export results | P1 | User can download CSV or use print view without including secrets or internal raw payloads. |
@@ -154,7 +154,7 @@ Priority notation: **P0** = required for submission; **P1** = important if time 
 | Qloo audience conditioning | Optional | Audience IDs and an equal-weight scalar used by supported Qloo requests. |
 | Qloo demographic conditioning | Optional | UI age values are `25_to_34`, `35_and_younger`, `36_to_55` or `55_and_older`; the shared Qloo client serializes the legacy 25–34 value into valid API buckets. Gender is `male` or `female`. |
 | Creator limit | Yes | One to 100 candidates per Apify search variant. |
-| Search mode | System-controlled | The workflow always creates baseline and culture-informed variants for comparison. |
+| Search mode | System-controlled | Broad discovery is the default. Optional agent-selected refinement is bounded to one additional search and preserves campaign constraints. |
 
 ## 9. Match score and explanation requirements
 
@@ -174,7 +174,7 @@ Implementation rules:
 - Keep component weights in configuration, not prompts.
 - Treat all component scores as 0–100 normalized indicators with documented methods.
 - If a component is missing, mark it unavailable and renormalize across eligible components; also show evidence completeness separately.
-- Baseline scoring disables the cultural-affinity component so the culture-informed score can be compared against a no-Qloo baseline. A separate culture-run ablation disables Qloo only while keeping the same culture-informed candidates.
+- Broad scoring disables the cultural-affinity component. Optional-refinement scoring enables it, and the refinement candidates are rescored with Qloo disabled for the ablation. When no refinement runs, the broad result remains the honest comparison baseline.
 - Qloo person coverage is conditional: established public figures may resolve, while micro-influencers may remain unavailable. Missing Qloo data is not converted to zero.
 - Audience geography and language remain unavailable unless the provider returns and verifies those fields; creator location is not audience evidence.
 - Explain that Campaign Fit Score is a ranking aid, not a validated prediction of ROI.
@@ -203,16 +203,16 @@ Each card should show:
 - “Unknown / not verified” fields, especially audience geography and language.
 - One campaign concept, marked as an AI-generated hypothesis.
 
-### Baseline versus culture-informed results
+### Broad discovery versus optional refinement
 
-Display the two ranked lists side by side or in a switchable view. Report candidate overlap, changed ranks, score deltas, Qloo-scored creator counts and the Qloo ablation result. If it does not materially improve the shortlist, state that result rather than exaggerating the impact of Qloo.
+Display broad discovery and any optional refinement side by side or in a switchable view. Report candidate overlap, changed ranks, score deltas, Qloo-scored creator counts, critic decisions, and the Qloo ablation result. If no refinement runs or it does not materially improve the shortlist, state that result rather than exaggerating the impact of Qloo.
 
 ## 11. Non-functional requirements
 
 - **Security:** all provider secrets remain server-side; validate all user and model-generated inputs; do not expose raw API tokens in logs or responses.
 - **Reliability:** analysis status, provider run IDs and dataset IDs are persisted; an interrupted page session can resume by campaign ID; provider-start claims prevent duplicate Apify runs; retries are bounded to the configured attempt limit.
 - **Latency:** use asynchronous Apify runs and return the campaign ID immediately. Show stage progress instead of holding a single request open.
-- **Cost:** the campaign creator limit is capped at 100; Qloo creator enrichment is capped by `QLOO_CREATOR_ENRICH_LIMIT` (default 20); model search plans and reports are opt-in through environment flags.
+- **Cost:** the campaign creator limit is capped at 100; Qloo creator enrichment is capped by `QLOO_CREATOR_ENRICH_LIMIT` (default 20); agentic decisions, optional creator refinement, and model reports are opt-in through environment flags. Refinement is capped at one additional Apify search.
 - **Explainability:** every score is reproducible from stored normalized inputs and configured weights.
 - **Accessibility:** semantic forms, keyboard-accessible controls, readable contrast, clear status messages.
 - **Privacy:** collect only the campaign information necessary; don't store unnecessary personal data; raw provider payload retention is optional and expires after seven days by default.
@@ -223,7 +223,7 @@ These are prototype validation metrics, not business claims:
 
 - API completion: a complete test campaign succeeds end-to-end in at least 4 of 5 repeated runs with expected provider access.
 - Evidence coverage: every displayed score has a stored component breakdown and source references/field provenance.
-- Comparative value: for one test brief, baseline, culture-informed and Qloo-ablation results can be compared with candidate overlap, rank changes and score deltas explained; no requirement that Qloo must always change the list.
+- Comparative value: for one test brief, broad discovery, optional refinement, and Qloo-ablation results can be compared with candidate overlap, rank changes and score deltas explained; no requirement that Qloo must always change the list.
 - Data honesty: zero unsupported claims about audience location, language, culture, engagement or expected ROI in acceptance tests.
 - Usability: a new tester can create a campaign and interpret the first three recommendations without developer assistance.
 - Submission readiness: public deployment, source repository, license and reproducible setup documentation are all available.
@@ -238,7 +238,7 @@ These are prototype validation metrics, not business claims:
 | Qloo Person has no matching micro-influencer | High | Query each creator by provider-returned real name; treat missing person affinity as unavailable and retain content-level Qloo enrichment where possible. |
 | Apify actor omits post text, language or follower geography | Critical | Inspect actor input/output schema and live result items first; mark missing data; narrow product promise to supported evidence. |
 | Culture signals are generalized into stereotypes | High | Use actual returned signals, label them directional, avoid essentializing language and let users inspect evidence. |
-| Cultural signals don't improve shortlist | High | Run baseline comparison; improve query design; report limited/no improvement honestly. |
+| Cultural signals don't improve shortlist | High | Compare broad discovery with optional refinement and Qloo ablation; report limited/no improvement honestly. |
 | Cost/latency of actor runs | Medium | Small result count, asynchronous run lifecycle, explicit cost guardrails and retries. |
 | AI generates unsupported explanation | High | Supply structured evidence only; schema-validate output; render facts and generated hypotheses separately. |
 | Provider schema changes | Medium | Central adapters, response validation, bounded retries and integration tests with recorded fixtures. |
@@ -249,9 +249,9 @@ These are prototype validation metrics, not business claims:
 
 1. Submit one campaign brief with a selected country/region/city, demographic conditioning and a small set of cultural references.
 2. Show Qloo entity resolution, tag fallback/semantic search and the five-layer regional culture profile.
-3. Show the paired baseline and culture-informed Apify searches with persisted asynchronous run status.
+3. Show broad Apify discovery with persisted asynchronous status, then show the critic decision and optional refinement trace when enabled.
 4. Show normalized candidate profiles and additive Qloo creator-content/person enrichment.
-5. Compare baseline, culture-informed and Qloo-ablation rankings, including overlap and rank changes.
+5. Compare broad, optional refinement, and Qloo-ablation rankings, including overlap and rank changes.
 6. Open a creator card to show evidence, unavailable fields, cultural-affinity source and an optional campaign concept.
 7. Change one reference or market parameter and rerun, showing how the research signals and creator-search plan change.
 
@@ -261,7 +261,7 @@ The demo should emphasize that Qloo informs cultural research and materially par
 
 ### Must ship
 
-Campaign brief with flexible global market fields; Qloo entity/tag resolution with fallback; five-layer regional Taste Analysis; paired baseline and culture-informed Apify runs; asynchronous run polling; creator normalization and additive Qloo enrichment; deterministic six-component scoring; Qloo ablation; evidence-based reasons; deployable results UI; README and license.
+Campaign brief with flexible global market fields; Qloo entity/tag resolution with fallback; five-layer regional Taste Analysis; broad Apify discovery with bounded optional refinement; asynchronous run polling; creator normalization and additive Qloo enrichment; deterministic six-component scoring; Qloo ablation; evidence-based reasons; agent trace and critic state; deployable results UI; README and license.
 
 ### Ship if time permits
 
@@ -276,7 +276,7 @@ Multiple platforms, direct audience demographic integrations, verified post-leve
 1. Which Qloo tag namespaces and location combinations return useful signals for each supported market/category under live credentials?
 2. Which fields are actually returned by `influship/influencer-search` for a live test run, especially bio, post evidence, language, audience location, engagement, growth and costs?
 3. Does the actor's returned semantic score remain comparable when query wording changes? Treat it as provider metadata, not a cross-run calibrated probability.
-4. What are the current actor cost and latency for paired baseline/culture searches under the account used for the demo?
+4. What are the current actor cost and latency for broad discovery plus an optional refinement under the account used for the demo?
 5. Which model provider/model and hosting limits are available under the team's credentials and deployment plan?
 
 ## 17. References

@@ -27,7 +27,7 @@ The repository now implements the core plan:
 - Explicit user-selected audience, age, and gender conditioning with persisted campaign inputs.
 - Bounded Apify content-signal extraction from captions, descriptions, hashtags, and text fields.
 - Location-conditioned creator-content enrichment and a dedicated Qloo resonance score.
-- Baseline, Qloo-informed, and Qloo ablation scoring with ranking and score deltas.
+- Broad, optional-refinement, and Qloo-ablation scoring with ranking and score deltas.
 - Creator signal resolution counts, unresolved counts, and evidence coverage metrics.
 - Qloo entity comparison and opt-in heatmap retrieval/rendering.
 - Results-page cards for the fingerprint and measured Qloo contribution.
@@ -48,9 +48,9 @@ The current behavior is:
 
 1. Resolve cultural references.
 2. Request location-based `urn:tag` results.
-3. Convert Qloo signal names into text terms.
-4. Append those terms to the culture-informed Apify query.
-5. Compare Qloo signal names lexically with the creator bio.
+3. Preserve Qloo signal IDs, types, weights and provenance.
+4. Run one broad Apify creator search without raw Qloo terms in the initial query.
+5. Enrich observed creator evidence with Qloo and let a bounded critic decide whether one optional refinement search is justified.
 
 This loses important Qloo information such as stable IDs, signal types, weights, affinity values, relationships, and query provenance. It also makes the cultural score dependent on wording in a short bio rather than actual creator-content evidence.
 
@@ -105,7 +105,7 @@ Build Qloo cultural fingerprint
     +--> Reference-in-market profile
     |
     v
-Discover creators with shared campaign constraints
+Discover creators with shared campaign constraints (broad initial search)
     |
     v
 Extract observed creator-content signals
@@ -117,13 +117,13 @@ Resolve creator signals to Qloo entities/tags
 Calculate Qloo-conditioned cultural resonance
     |
     v
-Compare baseline, Qloo-informed, and ablation results
+Compare broad discovery, optional refinement, and Qloo ablation results
     |
     v
 Explain every ranking change with evidence
 ```
 
-Qloo should influence both discovery and evaluation. It should not merely be called once before an otherwise generic creator search.
+Qloo should primarily enrich and evaluate the broad creator set. It may influence a single optional refinement only when the creator-search agent and evidence critic select a justified action. Raw Qloo labels should not automatically become creator-search keywords.
 
 ## 6. Structured Qloo cultural fingerprint
 
@@ -288,30 +288,30 @@ Keep the overall campaign score decomposed:
 
 Do not let unavailable components silently become zero. Preserve the current missing-data behavior.
 
-## 10. Baseline and ablation experiment
+## 10. Broad discovery, refinement and ablation experiment
 
 The hackathon demo should prove Qloo’s contribution.
 
-Run three comparable variants with the same campaign constraints and creator limit:
+Run a broad initial discovery and, when justified, one optional refinement with the same campaign constraints and creator limit:
 
-### Variant A: Baseline
+### Variant A: Broad discovery
 
-Search using the campaign category, market, and explicit creator constraints. Do not use Qloo-derived signals.
+Search using the campaign category, market, and explicit creator constraints. Do not use Qloo-derived signals in the initial query.
 
-### Variant B: Qloo-informed
+### Variant B: Optional Qloo-guided refinement
 
-Search using the same constraints plus the validated Qloo signal plan. Rank candidates using the Qloo cultural resonance component.
+Start from the same broad result set and run a second search only when the agent selects a validated refinement action. The refinement may use selected Qloo signals, market terms or a broadened query while preserving campaign constraints. Rank candidates using the Qloo cultural resonance component.
 
 ### Variant C: Qloo ablation
 
-Use the Qloo-informed candidate set but remove the Qloo resonance component from scoring. This isolates whether Qloo evidence changed the ranking rather than merely changing retrieval.
+Use the optional-refinement candidate set, when present, but remove the Qloo resonance component from scoring. This isolates whether Qloo evidence changed the ranking rather than merely changing retrieval.
 
 ### Metrics
 
 Store and display:
 
-- Baseline and Qloo-informed overlap
-- New creators introduced by Qloo
+- Broad/refinement overlap
+- New creators introduced by the optional refinement
 - Rank movement
 - Score movement attributable to Qloo resonance
 - Number of Qloo signals used
@@ -422,7 +422,7 @@ When both a brand and distinct cultural references resolve to entities, the work
 
 ### Phase E — Demonstration and evaluation
 
-- Run baseline, Qloo-informed, and ablation variants.
+- Run broad discovery, optional refinement when justified, and ablation variants.
 - Add ranking-delta and Qloo-contribution views.
 - Validate one complete campaign live.
 - Record a short demo showing the evidence chain.
@@ -437,7 +437,7 @@ The Qloo work is complete for the hackathon when:
 - Weighted or operator-based signal composition is demonstrated where supported.
 - Creator-content signals are resolved to Qloo entities or tags, or their absence is explicitly shown.
 - At least one creator ranking change is explained by concrete Qloo evidence.
-- Baseline, Qloo-informed, and ablation results can be compared.
+- Broad, optional-refinement and ablation results can be compared, including an honest no-refinement result.
 - The UI clearly distinguishes Qloo provider signals, creator evidence, derived scores, and hypotheses.
 - No screen claims verified audience geography, cultural identity, or ROI without supporting data.
 - Provider failures and unresolved entities remain visible and safe.
@@ -452,7 +452,7 @@ The strongest demo sequence is:
 4. Show the combined weighted campaign fingerprint.
 5. Show creator content being mapped to Qloo entities/tags.
 6. Show one creator’s resonance breakdown.
-7. Compare baseline and Qloo-informed rankings.
+7. Compare broad discovery and optional-refinement rankings, or show why refinement was skipped.
 8. Show the ablation result to isolate Qloo’s contribution.
 9. End with the limitations: this is cultural content resonance, not audience geography or ROI prediction.
 

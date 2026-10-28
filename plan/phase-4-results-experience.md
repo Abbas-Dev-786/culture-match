@@ -4,7 +4,7 @@
 
 **Depends on:** Phase 3 result contracts
 
-**Exit condition:** A new tester can submit a campaign, follow progress, inspect the first recommendations, understand uncertainty, and compare baseline with culture-informed results without developer assistance.
+**Exit condition:** A new tester can submit a campaign, follow progress, inspect the first recommendations, understand uncertainty, inspect the agent/critic trace, and compare broad discovery with optional refinement without developer assistance.
 
 ## Build order
 
@@ -29,7 +29,7 @@ Create:
 - `components/culture-profile.tsx`
 - `components/creator-card.tsx`
 - `components/match-breakdown.tsx`
-- `components/baseline-comparison.tsx`.
+- `components/baseline-comparison.tsx` (legacy component name; it renders broad/refinement comparison).
 
 Use client-safe results contracts only. Render explicit badges for verified, provider-derived, derived, unavailable, and hypothesis content.
 
@@ -63,7 +63,7 @@ Optional inputs:
 - Preferred content language.
 - Follower range.
 - Budget and currency.
-- Search mode or comparison toggle.
+- Optional refinement/approval behavior is system-controlled; no search-mode toggle is required.
 
 Form behavior:
 
@@ -84,9 +84,10 @@ Show the persisted workflow stages:
 4. Preparing creator search.
 5. Searching creators.
 6. Waiting for provider results.
-7. Normalizing and scoring.
-8. Generating report.
-9. Complete or failed.
+7. Critiquing evidence and optionally refining creator discovery.
+8. Normalizing and scoring.
+9. Generating report.
+10. Complete or failed.
 
 The UI polls only the application status endpoint with bounded intervals and stops on terminal states. It must not create duplicate runs when the page reloads.
 
@@ -143,16 +144,17 @@ Each card should contain:
 
 Do not imply that ranking equals campaign success or that a creator reaches the selected market unless audience geography is verified.
 
-## 6. Build baseline comparison
+## 6. Build broad/refinement comparison
 
 Provide either a side-by-side view or a switchable comparison containing:
 
-- Baseline ranking.
-- Culture-informed ranking.
+- Broad-discovery ranking.
+- Optional refinement ranking, or an explicit no-refinement state.
 - Candidate overlap.
 - Rank movement.
 - Added/removed candidates.
 - Evidence behind meaningful changes.
+- Critic decision and refinement rationale.
 - A plain-language conclusion, including “little or no material change” when appropriate.
 
 ## 7. Build creator detail view
@@ -204,7 +206,7 @@ PDF generation is optional and should not delay the demo path.
 - Progress stops correctly on success and failure.
 - Culture profile displays only stored Qloo signals.
 - Creator cards distinguish verified, derived, missing, and hypothetical content.
-- Baseline comparison renders for zero, partial, and full overlap.
+- Broad/refinement comparison renders for zero, partial, and full overlap, including no refinement.
 - Export contains only client-safe fields.
 - Keyboard and mobile smoke tests pass.
 
@@ -214,7 +216,7 @@ PDF generation is optional and should not delay the demo path.
 - Progress/status UI.
 - Culture profile.
 - Creator cards and detail view.
-- Baseline comparison.
+- Broad/refinement comparison.
 - Optional print/CSV export.
 - Responsive and accessible styling.
 
@@ -224,5 +226,5 @@ PDF generation is optional and should not delay the demo path.
 - [ ] Progress and recovery are understandable.
 - [ ] First three recommendations are interpretable.
 - [ ] Evidence and uncertainty are visible.
-- [ ] Baseline comparison is honest and usable.
+- [ ] Broad/refinement comparison is honest and usable.
 - [ ] No secrets or raw internal payloads appear in the UI/export.

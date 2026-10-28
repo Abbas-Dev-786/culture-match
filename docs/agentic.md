@@ -1,4 +1,16 @@
-Your current implementation is agentic in structure, but its decisions are still deterministic. To move further, make the model choose actions while keeping execution bounded and validated.
+The implementation now uses a bounded agentic workflow: the model can choose validated research and creator-search actions while tools enforce campaign constraints, provider limits, approval policy and persistence. Numeric matching remains deterministic by design so ranking is reproducible and auditable.
+
+## Implemented status
+
+The current codebase includes:
+
+- A research supervisor action contract with persisted traces and evidence references.
+- Creator-search result criticism and one optional adaptive refinement, gated by `ENABLE_AGENTIC_CREATOR_REFINEMENT`.
+- Evidence criticism that can accept, refine or stop with caveats.
+- Approval handling for higher-cost or broader actions through the persisted workflow.
+- Broad initial creator discovery without automatically injecting raw Qloo signal labels into the query.
+
+The remaining work is to expand tool coverage and live-provider validation, not to restore the old always-paired search behavior.
 
 Recommended next steps:
 
@@ -51,7 +63,7 @@ stop_with_caveats
 
 4. Allow the agent to select search strategy
 
-Currently you always produce baseline and culture-informed searches. A more agentic system could choose:
+The initial broad search is always available; the agent can choose whether an optional refinement search is useful:
 
 - whether a comparison search is useful
 - which cultural signals should influence the creator query
@@ -100,7 +112,7 @@ For higher-risk actions, let the user approve:
 
 The agent proposes; the user approves.
 
-The strongest next implementation would be:
+The current bounded architecture is:
 
 Campaign brief
   ↓
@@ -116,6 +128,6 @@ Creator-search planner agent
   ├─ query refinement
   └─ stop decision
   ↓
-Deterministic scoring and report
+Deterministic scoring and evidence-grounded report
 
 The important distinction is that the model should decide which tool to call next based on observed results. The tools should still enforce limits, schemas, campaign constraints, and deterministic scoring.

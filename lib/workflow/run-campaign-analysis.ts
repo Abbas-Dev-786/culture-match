@@ -2,7 +2,6 @@ import type { AnalysisRunRow, CampaignRow } from "@/lib/db/database.types"
 import type {
   BaselineComparison,
   CampaignBrief,
-  CultureSignal,
   JsonObject,
 } from "@/lib/domain/types"
 import {
@@ -43,7 +42,6 @@ import {
   searchPlanSchema,
   type SearchPlan,
 } from "@/lib/workflow/search-plan"
-import { generateModelSearchPlan } from "@/lib/workflow/search-plan-model"
 import { createServiceRoleClient } from "@/lib/server-admin"
 import type { WorkflowContext } from "@/lib/db/runs"
 import { ApplicationError, isApplicationError } from "@/lib/errors"
@@ -207,14 +205,16 @@ async function advanceWorkflow(
       })
     if (hasPendingApproval(culture.providerSummary)) return run
     const plans = createDeterministicSearchPlans(brief, culture.signals)
-    const modelPlan = await generateModelPlanSafely(brief, culture.signals)
-    const culturePlan: SearchPlan = modelPlan
-      ? { ...modelPlan, variant: "culture_informed" }
-      : plans.cultureInformed
+    const broadPlan = plans.baseline
+    const culturePlan: SearchPlan = {
+      ...broadPlan,
+      variant: "culture_informed",
+    }
     const providerSummary: JsonObject = {
       ...culture.providerSummary,
+      discoveryStrategy: "broad_default",
       searchPlans: {
-        baseline: actorPlanToJson(plans.baseline),
+        baseline: actorPlanToJson(broadPlan),
         cultureInformed: actorPlanToJson(culturePlan),
       },
       searchQueryConstruction: {
@@ -225,13 +225,13 @@ async function advanceWorkflow(
           query: plans.queryConstruction.baseline.query,
         },
         cultureInformed: {
-          qlooTerms: plans.queryConstruction.cultureInformed.qlooTerms,
-          qlooSignalIds: plans.queryConstruction.cultureInformed.qlooSignalIds,
+          qlooTerms: [],
+          qlooSignalIds: [],
           query: culturePlan.query,
-          source: modelPlan ? "model" : "deterministic",
+          source: "broad_default",
         },
       },
-      searchPlanSource: modelPlan ? "model" : plans.source,
+      searchPlanSource: "deterministic",
     }
     await saveCultureProfile(client, {
       campaignId: campaign.id,
@@ -246,27 +246,21 @@ async function advanceWorkflow(
     if (!claim) return run
 
     const apify = createApifyClient()
-    // Actor creation is intentionally single-attempt: a lost response can
-    // mean Apify accepted the run, so repeating the request could duplicate it.
-    const [baselineAttempt, cultureAttempt] = await Promise.allSettled([
-      claim.run.baseline_provider_run_id
+    // Broad discovery is the only initial paid search. The culture-informed
+    // slot is reserved for an evidence-driven refinement search.
+    const broadAttempt =
+      claim.run.baseline_provider_run_id || claim.run.provider_run_id
         ? Promise.resolve(undefined)
         : startCreatorSearch(
             apify,
-            plans.baseline,
-            `${run.idempotency_key}:baseline`
-          ),
-      claim.run.provider_run_id
-        ? Promise.resolve(undefined)
-        : startCreatorSearch(
-            apify,
-            culturePlan,
-            `${run.idempotency_key}:culture`
-          ),
-    ])
+            broadPlan,
+            `${run.idempotency_key}:broad`
+          )
 
     let persistedRun = claim.run
-    if (baselineAttempt.status === "fulfilled" && baselineAttempt.value) {
+    const broadResult = await Promise.allSettled([broadAttempt])
+    const broadAttemptResult = broadResult[0]
+    if (broadAttemptResult?.status === "fulfilled" && broadAttemptResult.value) {
       logWorkflowEvent({
         campaignId: campaign.id,
         analysisRunId: run.id,
@@ -278,31 +272,40 @@ async function advanceWorkflow(
       persistedRun = await updateRunBaselineProviderIds(
         client,
         persistedRun,
-        baselineAttempt.value.runId,
-        baselineAttempt.value.datasetId,
+        broadAttemptResult.value.runId,
+        broadAttemptResult.value.datasetId,
         claim.claimToken
       )
-    }
-    if (cultureAttempt.status === "fulfilled" && cultureAttempt.value) {
-      logWorkflowEvent({
-        campaignId: campaign.id,
-        analysisRunId: run.id,
-        stage: "searching_creators",
-        status: "provider_started",
-        provider: "apify",
-        startedAt: run.started_at,
-      })
       persistedRun = await updateRunProviderIds(
         client,
         persistedRun,
-        cultureAttempt.value.runId,
-        cultureAttempt.value.datasetId,
+        broadAttemptResult.value.runId,
+        broadAttemptResult.value.datasetId,
+        claim.claimToken
+      )
+    } else if (!persistedRun.provider_run_id && persistedRun.baseline_provider_run_id) {
+      persistedRun = await updateRunProviderIds(
+        client,
+        persistedRun,
+        persistedRun.baseline_provider_run_id,
+        persistedRun.baseline_provider_dataset_id ?? undefined,
+        claim.claimToken
+      )
+    } else if (
+      !persistedRun.baseline_provider_run_id &&
+      persistedRun.provider_run_id
+    ) {
+      persistedRun = await updateRunBaselineProviderIds(
+        client,
+        persistedRun,
+        persistedRun.provider_run_id,
+        persistedRun.provider_dataset_id ?? undefined,
         claim.claimToken
       )
     }
     run = persistedRun
 
-    const failedAttempt = [baselineAttempt, cultureAttempt].find(
+    const failedAttempt = broadResult.find(
       (attempt) => attempt.status === "rejected"
     )
     if (failedAttempt?.status === "rejected") {
@@ -364,30 +367,33 @@ async function advanceWorkflow(
     )
   }
 
-  const cultureResults = await withProviderRetry(
-    "apify",
-    () =>
-      getRunResults(
-        createApifyClient(),
-        run.provider_run_id as string,
-        run.provider_dataset_id ?? undefined,
-        new Date().toISOString(),
-        campaign.creator_limit
-      ),
-    undefined,
-    undefined,
-    (record) =>
-      console.info(
-        "provider_retry",
-        JSON.stringify({
-          runId: run.id,
-          provider: record.provider,
-          attempt: record.attempt,
-          delayClass: record.delayClass,
-          errorCode: record.errorCode,
-        })
-      )
-  )
+  const cultureResults =
+    run.provider_run_id === run.baseline_provider_run_id
+      ? baselineResults
+      : await withProviderRetry(
+          "apify",
+          () =>
+            getRunResults(
+              createApifyClient(),
+              run.provider_run_id as string,
+              run.provider_dataset_id ?? undefined,
+              new Date().toISOString(),
+              campaign.creator_limit
+            ),
+          undefined,
+          undefined,
+          (record) =>
+            console.info(
+              "provider_retry",
+              JSON.stringify({
+                runId: run.id,
+                provider: record.provider,
+                attempt: record.attempt,
+                delayClass: record.delayClass,
+                errorCode: record.errorCode,
+              })
+            )
+        )
   if (!cultureResults) return run
   if (
     cultureResults.run.datasetId &&
@@ -465,6 +471,7 @@ async function advanceWorkflow(
     refinementCount: searchState.refinementCount,
   })
   const canRefine =
+    process.env.ENABLE_AGENTIC_CREATOR_REFINEMENT === "true" &&
     searchDecision.decision === "refine_creator_search" &&
     searchState.refinementCount < MAX_CREATOR_SEARCH_REFINEMENTS
   const requiresApproval = process.env.AGENTIC_REQUIRE_APPROVAL === "true"
@@ -780,17 +787,6 @@ function enforceWorkflowRuntime(run: AnalysisRunRow): void {
 function readMaxAnalysisRuntimeMs(): number {
   const value = Number(process.env.MAX_ANALYSIS_RUNTIME_MS)
   return Number.isInteger(value) && value > 0 ? value : 900_000
-}
-
-async function generateModelPlanSafely(
-  brief: CampaignBrief,
-  signals: CultureSignal[]
-): Promise<Awaited<ReturnType<typeof generateModelSearchPlan>>> {
-  try {
-    return await generateModelSearchPlan(brief, signals)
-  } catch {
-    return undefined
-  }
 }
 
 function campaignToBrief(campaign: CampaignRow): CampaignBrief {

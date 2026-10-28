@@ -441,7 +441,7 @@ function CampaignStep({
     <section className="grid gap-5" aria-labelledby="campaign-basics-heading">
       <div>
         <h2 id="campaign-basics-heading" className="font-medium">Start with the campaign context</h2>
-        <p className="mt-1 text-sm text-muted-foreground">These inputs anchor both the baseline and culture-informed searches.</p>
+        <p className="mt-1 text-sm text-muted-foreground">These inputs anchor broad creator discovery. Cultural signals are applied after discovery and only used for optional refinement.</p>
       </div>
       <div className="grid gap-5 md:grid-cols-2">
         <Field>

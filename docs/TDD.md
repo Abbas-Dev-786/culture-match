@@ -42,10 +42,10 @@ Do not introduce a vector database, Redis, a separate Express service, or a mult
 - **Dashboard:** submits campaign briefs, renders stage status, shows Regional Culture Profile, compares rankings, and displays creator evidence.
 - **Campaign API:** validates requests, checks ownership/access if authentication is added, creates the campaign/run records and dispatches analysis.
 - **Workflow runner:** drives the fixed state machine; owns retries, idempotency, timeouts, and persistence. It must not depend on a browser session staying open.
-- **CultureMatch orchestrator:** owns the deterministic workflow. Optional model calls generate a validated culture-informed search plan and evidence-grounded reports; they do not control provider access or numeric scores.
+- **CultureMatch orchestrator:** owns the persisted workflow and bounded agent decisions. Research supervision, creator-search criticism/refinement and evidence criticism produce validated actions; provider access and numeric scoring remain guarded by server-side tools.
 - **Qloo adapter:** wraps entity search, tag search and Insights/Compare/Heatmap endpoints; centralizes age serialization, weighted GET/POST requests, namespace scoping and response validation.
 - **Qloo resolution/enrichment:** retries entity spelling variants, falls back to scoped tags, resolves semantic tags, runs five culture layers, enriches creator content, and validates named persons without local name matching.
-- **Apify adapter:** starts paired baseline/culture runs, records run ID/dataset ID, checks status and maps result items into a stable schema.
+- **Apify adapter:** starts the broad creator search and, only when an agent decision is enabled and justified, one bounded refinement run; it records run ID/dataset ID, checks status and maps result items into a stable schema.
 - **Matching engine:** pure TypeScript functions that score candidate records, report evidence availability and calculate a separate confidence/completeness indicator.
 - **Report generator:** creates structured candidate explanations/campaign concepts from persisted evidence; validates model output before saving.
 - **Supabase persistence:** stores state and source provenance so results can be reloaded and audited.
@@ -61,7 +61,7 @@ Use **one orchestrator agent with a narrow toolset**, inside an explicit workflo
 | `resolveQlooEntities` | Brand/reference strings and allowed entity type | Resolved candidates, explicit ambiguity/unresolved state, and a scoped tag fallback when entity search fails | Do not silently promote a tag fallback to an entity. |
 | `resolveQlooTags` | Product/reference/content terms and scoped tag namespaces | Exact or ranked semantic tag matches with provider evidence | Typo tolerance and semantic search are enabled on every tag request. |
 | `analyzeRegionalCulture` | Resolved entities/tags, location, demographic conditioning and bounded result limit | Five normalized cultural layers plus provenance | Uses only centralized, documented request contracts. |
-| `buildCreatorSearchPlan` | Campaign brief + normalized culture signals | Query text and validated actor filters | May be a structured model step, not an external tool. |
+| `buildCreatorSearchPlan` | Campaign brief + normalized culture signals + optional agent action | Broad or refinement query and validated actor filters | Initial planning is broad; optional refinement is schema-validated and bounded. |
 | `searchCreators` | Search plan | Apify run ID and initial status | Starts only one run for a given idempotency key. |
 | `getCreatorSearchStatus` | Apify run ID | Run state and, when done, dataset items | Called by workflow, not every UI poll directly against Apify. |
 | `scoreCreatorMatches` | Normalized candidate list + culture profile + constraints | Ranked candidates and score components | Deterministic code; not model-selected numbers. |
@@ -75,9 +75,9 @@ Use **one orchestrator agent with a narrow toolset**, inside an explicit workflo
 
 ### Bounded agent loop
 
-- Maximum one model search-plan call and one optional report call per workflow stage.
+- Maximum one research decision and one creator refinement decision per workflow stage, plus one optional report call.
 - Entity spelling retries and tag fallback are bounded inside the Qloo adapter; there is no free-running agent loop.
-- Exactly one baseline and one culture-informed Apify run are created per analysis attempt.
+- One broad Apify run is created per analysis attempt; at most one optional refinement run may be created after a justified agent decision.
 - Creator enrichment is capped by `QLOO_CREATOR_ENRICH_LIMIT`; creator results are capped by the campaign limit.
 - If evidence remains insufficient, preserve unavailable fields and continue with transparent caveats rather than inventing data.
 
@@ -107,12 +107,12 @@ Allowed transitions should be enforced in server-side code. `completed`, `failed
 3. Resolve product, description and unresolved-reference terms through Qloo tag search with typo tolerance, semantic search and relevant tag namespaces.
 4. Execute five Qloo Taste Analysis layers—market, brand, product, reference and combined—using location signals, scoped tag types, centralized demographic serialization and safe entity weighting. Use `union` for sparse combined tags and `intersection` only when at least five tags resolve.
 5. Persist normalized culture signals, provider summary and optional short-lived raw payload. Fail the culture stage when no usable cultural signal exists; do not silently downgrade the run to an unlabeled baseline.
-6. Build deterministic baseline and culture-informed Apify plans. Optionally replace the culture plan with a schema-validated model plan when `ENABLE_MODEL_SEARCH_PLAN=true`.
-7. Claim provider start once, start one Apify run for each plan, and persist both provider run IDs/dataset IDs. Browser polling never creates provider runs.
-8. Poll the app-owned workflow; read terminal datasets, normalize observed fields, de-duplicate creators and persist candidates by `baseline` or `culture_informed` variant.
+6. Build the broad Apify plan without raw Qloo query terms. If `ENABLE_AGENTIC_CREATOR_REFINEMENT=true`, let the creator-search agent and evidence critic propose a schema-validated refinement action using selected signals and preserved constraints.
+7. Claim provider start once, start the broad Apify run, and start at most one refinement run when the decision is approved. Persist every run ID/dataset ID and the critic rationale. Browser polling never creates provider runs.
+8. Poll the app-owned workflow; read terminal datasets, normalize observed fields, de-duplicate creators and persist the broad result in the existing `baseline` slot. If refinement runs, persist its candidates in the existing `culture_informed` slot.
 9. Enrich the combined creator set with location-conditioned Qloo tag affinity. For named creators, run POST person validation with `filter.results.entities.query`, campaign tags, demographic conditioning and `bias.trends=high`; omit person location signals and keep missing matches unavailable.
-10. Score baseline candidates with Qloo resonance disabled, culture-informed candidates with Qloo enabled, and culture candidates again with Qloo disabled for ablation. Persist component evidence, completeness, caveats and comparison metrics.
-11. When `ENABLE_MODEL_REPORTS=true`, generate validated reports for the top five culture-informed matches using only persisted evidence. Deterministic score data remains authoritative if model output is unavailable.
+10. Score the broad and optional refinement candidate sets with deterministic component evidence; apply Qloo resonance only to the cultural component and preserve the Qloo-off ablation. Persist completeness, caveats and comparison metrics.
+11. When `ENABLE_MODEL_REPORTS=true`, generate validated reports for the top five enriched/refined matches using only persisted evidence. Deterministic score data remains authoritative if model output is unavailable.
 12. UI polls the app's status endpoint and fetches the persisted, client-safe result.
 
 ### Failure handling
@@ -121,7 +121,7 @@ Allowed transitions should be enforced in server-side code. `completed`, `failed
 - Do not retry most 4xx validation/auth failures; surface a sanitized actionable message.
 - Store provider status/code and a redacted error summary; never log provider secrets.
 - A retry must be idempotent for steps that create remote jobs or write result rows.
-- If Qloo returns no usable cultural signals, fail the culture stage with a safe error; baseline-only scoring is used only as the explicit comparison variant after successful culture research, never as a hidden fallback.
+- If Qloo returns no usable cultural signals, fail the culture stage with a safe error; the broad result is not presented as a Qloo-informed refinement. The existing baseline slot is a storage compatibility detail, not evidence that a second search ran.
 - If Apify returns fewer candidates than requested, use those available and display the sample size; do not imply comprehensive coverage.
 
 ## 6. External API integration design
@@ -159,14 +159,14 @@ Actor: `influship/influencer-search`.
 - Start an asynchronous run and persist actor run ID.
 - Retrieve results from the run's default dataset once terminal status indicates success.
 - Keep the actor input schema in one adapter module so changes do not spread through the app.
-- Start two validated searches per analysis attempt: a baseline plan and a culture-informed plan. Apply supported follower/engagement/platform filters from the current actor schema. Market and language constraints must be explicit inputs, not assumed from the selected country.
+- Start one validated broad search per analysis attempt. A second refinement search is optional, agent-selected and bounded to one additional run. Apply supported follower/engagement/platform filters from the current actor schema. Market and language constraints must be explicit inputs, not assumed from the selected country.
 - Store only fields needed for display, matching and debugging. Consider retention limits for raw profile payloads.
 
 **Integration spike required:** fetch the actor input and output schema or run a small test, then record exactly which properties exist. Do not code assumptions about `bio`, recent posts, language, audience location, average views, growth, fees or audience demographics until observed. The actor is community-maintained and can change. Current listing: https://apify.com/influship/influencer-search
 
 ### 6.3 Language model provider
 
-Abstract provider-specific setup behind `lib/agent/model.ts`. Keep a single model for MVP. The model search-plan call is optional (`ENABLE_MODEL_SEARCH_PLAN=true`) and returns a constrained `ActorSearchPlan`; the report call is optional (`ENABLE_MODEL_REPORTS=true`) and is limited to the top five culture-informed matches. Zod-validate all generated objects and require returned evidence keys to exist in the supplied evidence bundle. Prompts must treat provider payloads as untrusted data: external text can contain prompt injection, so do not follow instructions embedded in creator bios or scraped content.
+Abstract provider-specific setup behind `lib/agent/model.ts`. Keep a single model for MVP. Agentic research decisions are enabled with `ENABLE_AGENTIC_DECISIONS=true`; creator refinement additionally requires `ENABLE_AGENTIC_CREATOR_REFINEMENT=true` and is capped at one extra search. The report call is optional (`ENABLE_MODEL_REPORTS=true`) and is limited to the top five enriched/refined matches. Zod-validate all generated objects and require returned evidence keys to exist in the supplied evidence bundle. Prompts must treat provider payloads as untrusted data: external text can contain prompt injection, so do not follow instructions embedded in creator bios or scraped content.
 
 ## 7. Data contracts and TypeScript domain types
 
@@ -177,7 +177,7 @@ The types below are internal normalized contracts, not claims about raw provider
 - `NormalizedCreator` contains only observed Apify fields plus normalized content signals, source fields, missing fields, provider match score, location-verification state and optional Qloo person/content enrichment.
 - `ScoreComponent` uses keys `culturalAffinity`, `engagementRate`, `semanticRelevance`, `growthMomentum`, `postingConsistency` and `budgetTierFit`; unavailable components are excluded from the weighted mean.
 - `QlooFingerprint` records location, signals, five layer summaries, unresolved inputs, conditioning, combined tag operator, comparison and optional heatmap data.
-- `SearchPlan` is a strict actor contract with an Instagram-only platform, bounded query, optional supported filters and a campaign result limit. It is tagged as `baseline` or `culture_informed`.
+- `SearchPlan` is a strict actor contract with an Instagram-only platform, bounded query, optional supported filters and a campaign result limit. It is tagged as `baseline` for broad discovery or `culture_informed` for an optional refinement for storage compatibility.
 - `EvidenceRef` identifies the provider, field path, observation time, verification state and optional excerpt/provider ID. Model output may reference only keys present in this evidence set.
 
 Provider response parsing remains strict at adapter boundaries. Raw provider payloads use `unknown`/JSON validation; normalized application records use explicit numeric and enum normalization.
@@ -208,7 +208,7 @@ The implemented scoring contract is versioned as `prd-v1` in `lib/matching/score
 - Prefer the Qloo person-level `qlooAffinity` returned by the named-person validation request.
 - Otherwise use the weighted, location-conditioned Qloo creator-content signals. This is creator-content/market resonance, not audience-level affinity.
 - If no Qloo signal is available, return the component as unavailable and renormalize the remaining weights. Do not convert unavailable Qloo data to zero.
-- Baseline scoring sets `includeQlooResonance=false`; culture-informed scoring enables it. The culture-informed candidates are rescored with Qloo disabled for the ablation comparison.
+- Broad scoring sets `includeQlooResonance=false`; refined scoring enables it. Refined candidates are rescored with Qloo disabled for the ablation comparison.
 
 ### Engagement and reach/budget
 
@@ -242,8 +242,8 @@ The implemented Supabase schema uses UUIDs, UTC timestamps, user-scoped foreign 
 - `idempotency_key TEXT UNIQUE NOT NULL`
 - `apify_run_id TEXT NULL`
 - `apify_dataset_id TEXT NULL`
-- `baseline_provider_run_id TEXT NULL`
-- `baseline_provider_dataset_id TEXT NULL`
+- `baseline_provider_run_id TEXT NULL` (the broad initial search)
+- `baseline_provider_dataset_id TEXT NULL` (the broad initial dataset)
 - `score_algorithm_version TEXT NOT NULL`
 - workflow status/stage, safe error fields and provider-start lease/claim fields
 - `started_at TIMESTAMPTZ NULL`
@@ -264,7 +264,7 @@ The implemented Supabase schema uses UUIDs, UTC timestamps, user-scoped foreign 
 - `id UUID PRIMARY KEY`
 - `analysis_run_id UUID REFERENCES analysis_runs(id)`
 - `campaign_id UUID`, `user_id UUID`, provider and stable provider creator ID
-- `search_variant TEXT CHECK (search_variant IN ('baseline', 'culture_informed'))`
+- `search_variant TEXT CHECK (search_variant IN ('baseline', 'culture_informed'))`; these legacy values represent broad discovery and optional refinement respectively.
 - observed profile fields such as name, platform, username, profile URL, bio, followers, engagement and verification state
 - `location_unverified BOOLEAN`, provider match score, evidence JSONB and normalized payload JSONB
 - optional short-lived `raw_payload JSONB`
@@ -302,7 +302,7 @@ Response `201`:
 
 ### `POST /api/campaigns/:id/analyze`
 
-Advances the persisted analysis workflow for an existing campaign and returns the serialized campaign and run. The workflow enforces one active provider-start claim and must not create duplicate baseline or culture-informed Apify runs. Long-running provider work continues through persisted state and webhook/polling advancement.
+Advances the persisted analysis workflow for an existing campaign and returns the serialized campaign and run. The workflow enforces one active provider-start claim, one broad initial search and at most one optional refinement. Long-running provider work continues through persisted state and webhook/polling advancement.
 
 ### `GET /api/campaigns/:id/status`
 
@@ -323,7 +323,7 @@ Status endpoint reads app database only; it should not start a new Apify run. Pr
 
 ### `GET /api/campaigns/:id/results`
 
-Response contains campaign summary, culture signals, ranked creator matches, evidence references, caveats and baseline/culture-informed comparison metadata. Return only client-safe fields.
+Response contains campaign summary, culture signals, ranked creator matches, evidence references, caveats and broad/refinement comparison metadata. Return only client-safe fields.
 
 ### `POST /api/campaigns/:id/retry`
 
@@ -436,8 +436,9 @@ APIFY_MAX_TOTAL_CHARGE_USD=5
 APIFY_START_LEASE_MS=120000
 APIFY_WEBHOOK_SECRET=
 
-# Optional model features
-ENABLE_MODEL_SEARCH_PLAN=false
+# Agentic and model features
+ENABLE_AGENTIC_DECISIONS=false
+ENABLE_AGENTIC_CREATOR_REFINEMENT=false
 ENABLE_MODEL_REPORTS=false
 OPENROUTER_API_KEY=
 OPENROUTER_MODEL=qwen/qwen3.8-27b:free
@@ -478,7 +479,7 @@ Log one structured event per stage with `campaignId`, `analysisRunId`, `stage`, 
 - Qloo request success rate, latency, number of usable signals, response schema errors.
 - Qloo entity-to-tag fallback count, semantic/typo tag resolution rate, unresolved terms, person-validation match rate and enrichment count.
 - Apify runs started/completed/failed, time to completion, result count and cost if exposed.
-- Baseline vs culture-informed run IDs, candidate overlap, rank changes and Qloo ablation delta.
+- Broad/refinement run IDs, candidate overlap, rank changes and Qloo ablation delta.
 - Percentage of matches with each evidence component available.
 - Model output schema validation failures and token usage if available.
 
@@ -516,11 +517,11 @@ Run the current suite with `pnpm test`; it executes `node --experimental-strip-t
 1. User can submit an allowed campaign and receive a queued run.
 2. Campaign becomes visible immediately and shows progress.
 3. A successful Qloo run stores real signals and provenance.
-4. Baseline and culture-informed Apify run IDs are stored once; polling does not start duplicates.
+4. One broad Apify run is stored once; an optional refinement run is created only when the agent decision is enabled, approved and justified.
 5. Completed run displays actual creator records and score breakdowns.
 6. Missing audience geography or language is labeled unverified, and missing Qloo person matches remain unavailable.
-7. Baseline, culture-informed and Qloo-ablation ranking comparison renders, including when there is little/no difference.
-8. Provider failure displays a useful safe message and retry path; a Qloo culture failure is not silently presented as a successful baseline-only analysis.
+7. Broad, optional-refinement and Qloo-ablation ranking comparison renders, including when refinement is skipped or makes little/no difference.
+8. Provider failure displays a useful safe message and retry path; a Qloo culture failure is not silently presented as a successful Qloo-informed refinement.
 9. Public deployment works without secrets in the client bundle.
 
 ## 16. Deployment strategy
@@ -553,9 +554,9 @@ Run the current suite with `pnpm test`; it executes `node --experimental-strip-t
 
 ### Phase 2 — Provider workflow and scoring — complete
 
-- Add structured creator search plan from Qloo signals.
+- Add broad creator search and bounded agent-selected refinement from Qloo evidence.
 - Add deterministic scoring and evidence provenance.
-- Add baseline-vs-culture-informed comparison.
+- Add broad-vs-refinement comparison and an honest no-refinement state.
 - Add schema-validated explanations/campaign concept cards.
 
 ### Phase 3 — Submission hardening — current

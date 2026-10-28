@@ -84,6 +84,22 @@ test("Qloo resolves exact references and normalizes location signals", async () 
   )
 })
 
+test("Qloo research actions select only the requested layer and optional tools", async () => {
+  const result = await analyzeCulture(
+    brief,
+    createFixtureClient(),
+    "2026-10-23T00:00:00.000Z",
+    { requestedAction: "query_market_culture" }
+  )
+
+  assert.deepEqual(
+    result.fingerprint.layers.map((layer) => layer.group),
+    ["market"]
+  )
+  assert.equal(result.fingerprint.comparison, undefined)
+  assert.equal(result.fingerprint.heatmap, undefined)
+})
+
 test("Qloo keeps unresolved references explicit", async () => {
   const client = createQlooClient({
     baseUrl: "https://qloo.test",
@@ -419,6 +435,58 @@ test("Qloo enriches creator content with location-conditioned affinity", async (
     "urn:tag:category:streetwear"
   )
   assert.equal(creator.qlooSignals?.[0]?.affinity, 0.92)
+})
+
+test("Qloo targeted enrichment leaves unselected creators untouched", async () => {
+  const client = createQlooClient({
+    baseUrl: "https://qloo.test",
+    searchUrl: "https://qloo.test/search",
+    insightsUrl: "https://qloo.test/v2/insights",
+    apiKey: "test-key",
+    fetchImpl: async (input) => {
+      if (input.includes("/tags"))
+        return new Response(JSON.stringify(tagFixture), { status: 200 })
+      return new Response(JSON.stringify(tagAffinityFixture), { status: 200 })
+    },
+  })
+  const evidence = {
+    source: "apify" as const,
+    fieldPath: "$.posts[0].caption",
+    observedAt: "2026-10-24T00:00:00.000Z",
+    verification: "provider_reported" as const,
+  }
+  const creators = await enrichCreatorsWithQloo(
+    [
+      {
+        provider: "apify",
+        providerCreatorId: "creator-target",
+        name: "Target Creator",
+        platform: "instagram",
+        contentSignals: [{ text: "Streetwear", sourceField: "posts", evidence }],
+        missingFields: [],
+        sourceFields: {},
+        evidence: [evidence],
+      },
+      {
+        provider: "apify",
+        providerCreatorId: "creator-other",
+        name: "Other Creator",
+        platform: "instagram",
+        contentSignals: [{ text: "Streetwear", sourceField: "posts", evidence }],
+        missingFields: [],
+        sourceFields: {},
+        evidence: [evidence],
+      },
+    ],
+    "India",
+    client,
+    [],
+    {},
+    { creatorIds: ["creator-target"], maxCreators: 1 }
+  )
+
+  assert.equal(creators[0]?.qlooSignals?.length, 1)
+  assert.equal(creators[1]?.qlooSignals, undefined)
 })
 
 test("Qloo validates creators from the documented person insight response", async () => {

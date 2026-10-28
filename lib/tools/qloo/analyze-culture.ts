@@ -37,6 +37,15 @@ export interface CultureResearchResult {
 
 export interface CultureResearchOptions {
   selection?: CampaignResearchSelection
+  requestedAction?:
+    | "resolve_cultural_references"
+    | "query_market_culture"
+    | "query_product_culture"
+    | "compare_brand_and_references"
+    | "request_qloo_heatmap"
+    | "broaden_inputs"
+    | "narrow_inputs"
+    | "stop_research"
 }
 
 export interface TasteProfileResult {
@@ -49,7 +58,8 @@ export async function buildTasteProfile(
   brief: CampaignBrief,
   resolution: CampaignSignalResolution,
   client: QlooClient,
-  observedAt = new Date().toISOString()
+  observedAt = new Date().toISOString(),
+  options?: Pick<CultureResearchOptions, "requestedAction">
 ): Promise<TasteProfileResult> {
   const layers = await loadFingerprintLayers(
     brief,
@@ -57,15 +67,17 @@ export async function buildTasteProfile(
     resolution.resolvedReferences,
     resolution.resolvedTags,
     client,
-    observedAt
+    observedAt,
+    options?.requestedAction
   )
-  const combinedLayer = layers.find((layer) => layer.group === "combined")
-  const marketLayer = layers.find((layer) => layer.group === "market")
-  let primaryLayer = [combinedLayer, marketLayer].find((layer) =>
+  const preferredGroups = preferredLayerGroups(options?.requestedAction)
+  let primaryLayer = preferredGroups
+    .map((group) => layers.find((layer) => layer.group === group))
+    .find((layer) =>
     layer?.signals.some(
       (signal) => signal.evidence.fieldPath === "$.results.tags[]"
     )
-  )
+    )
 
   if (!primaryLayer) {
     const fallbackPayload = await client.getInsights({
@@ -122,22 +134,32 @@ export async function analyzeCulture(
     options?.selection
   )
   const { resolvedReferences, resolvedTags, locationQuery } = resolution
-  const tasteProfile = await buildTasteProfile(brief, resolution, client, observedAt)
+  const tasteProfile = await buildTasteProfile(
+    brief,
+    resolution,
+    client,
+    observedAt,
+    { requestedAction: options?.requestedAction }
+  )
   const { signals, layers, primaryLayer } = tasteProfile
 
-  const comparison = await loadComparison(
-    brief,
-    locationQuery,
-    resolvedReferences,
-    client
-  )
-  const heatmap = await loadHeatmap(
-    brief,
-    locationQuery,
-    resolvedReferences,
-    resolvedTags,
-    client
-  )
+  const comparison = shouldLoadComparison(options?.requestedAction)
+    ? await loadComparison(
+        brief,
+        locationQuery,
+        resolvedReferences,
+        client
+      )
+    : undefined
+  const heatmap = shouldLoadHeatmap(options?.requestedAction)
+    ? await loadHeatmap(
+        brief,
+        locationQuery,
+        resolvedReferences,
+        resolvedTags,
+        client
+      )
+    : undefined
 
   const fingerprint = createFingerprint(
     locationQuery,
@@ -243,10 +265,34 @@ export async function analyzeCulture(
             },
           }
         : {}),
+      ...(options?.requestedAction
+        ? { requestedAction: options.requestedAction }
+        : {}),
       observedAt,
     },
     ...(rawPayload ? { rawPayload } : {}),
   }
+}
+
+function shouldLoadComparison(
+  action: CultureResearchOptions["requestedAction"]
+): boolean {
+  return action === undefined || action === "compare_brand_and_references"
+}
+
+function preferredLayerGroups(
+  action: CultureResearchOptions["requestedAction"]
+): QlooFingerprintGroup[] {
+  if (action === "query_market_culture") return ["market"]
+  if (action === "query_product_culture") return ["product"]
+  if (action === "resolve_cultural_references") return ["reference", "brand"]
+  return ["combined", "market", "product", "reference", "brand"]
+}
+
+function shouldLoadHeatmap(
+  action: CultureResearchOptions["requestedAction"]
+): boolean {
+  return action === undefined || action === "request_qloo_heatmap"
 }
 
 export interface FingerprintLayerResult {
@@ -277,7 +323,8 @@ async function loadFingerprintLayers(
   references: ResolvedEntity[],
   tags: ResolvedTag[],
   client: QlooClient,
-  observedAt: string
+  observedAt: string,
+  requestedAction?: CultureResearchOptions["requestedAction"]
 ): Promise<FingerprintLayerResult[]> {
   const brand = references.find(
     (reference) => reference.reference === brief.brandName
@@ -367,8 +414,9 @@ async function loadFingerprintLayers(
     },
   ]
 
+  const activeGroups = new Set(preferredLayerGroups(requestedAction))
   const results: FingerprintLayerResult[] = []
-  for (const spec of specs) {
+  for (const spec of specs.filter((item) => activeGroups.has(item.group))) {
     const operator = spec.tagSignals.length > 0 ? spec.operator : undefined
     const insight = await loadLayerInsights(
       client,

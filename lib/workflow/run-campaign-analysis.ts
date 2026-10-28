@@ -2,7 +2,9 @@ import type { AnalysisRunRow, CampaignRow } from "@/lib/db/database.types"
 import type {
   BaselineComparison,
   CampaignBrief,
+  CultureSignal,
   JsonObject,
+  JsonValue,
 } from "@/lib/domain/types"
 import {
   getCultureProfile,
@@ -63,8 +65,22 @@ import {
   creatorSearchStateToJson,
   decideCreatorSearch,
   refineCreatorSearchPlan,
+  type CreatorSearchAction,
 } from "@/lib/agent/creator-search-agent"
 import { critiqueEvidence } from "@/lib/agent/evidence-critic"
+import { routeCreatorSearchDecision } from "@/lib/agent/decision-router"
+import {
+  createApprovalKey,
+  validateAgentActionTrace,
+} from "@/lib/agent/action-trace"
+import {
+  autonomyBudgetToJson,
+  AutonomyBudgetExceededError,
+  initialAutonomyBudget,
+  readAutonomyBudget,
+  reserveAutonomyBudget,
+} from "@/lib/agent/autonomy-budget"
+import { decisionModeFromEnvironment } from "@/lib/agent/action-trace"
 import { logWorkflowEvent } from "@/lib/workflow/telemetry"
 
 const activeCampaigns = new Set<string>()
@@ -110,6 +126,15 @@ async function executeWorkflow(
       context.userId
     )
   } catch (error) {
+    if (error instanceof AutonomyBudgetExceededError) {
+      const latest = (await refreshContext()) ?? context
+      return failAnalysisRunById(
+        latest.client,
+        latest.run,
+        error.code,
+        error.message
+      )
+    }
     if (!(error instanceof ProviderError)) throw error
     const latest = (await refreshContext()) ?? context
     return failAnalysisRunById(
@@ -157,6 +182,19 @@ async function advanceWorkflow(
             message: record.message,
           })
       )
+      const researchBudget = reserveAutonomyBudget(initialAutonomyBudget(), {
+        actions:
+          typeof research.agentState.actionCount === "number"
+            ? research.agentState.actionCount
+            : research.trace.length,
+        providerCalls: research.trace.filter(
+          (entry) => entry.action === "query_qloo"
+        ).length,
+        modelCalls:
+          typeof research.agentState.modelDecisionCount === "number"
+            ? research.agentState.modelDecisionCount
+            : 0,
+      })
       const providerSummary: JsonObject = {
         ...research.providerSummary,
         agent: {
@@ -168,6 +206,7 @@ async function advanceWorkflow(
         },
         agentState: research.agentState,
         agentTrace: researchTraceToJson(research.trace),
+        autonomyBudget: autonomyBudgetToJson(researchBudget),
         ...(retries.length > 0 ? { retryHistory: retries } : {}),
       }
       await saveCultureProfile(client, {
@@ -245,6 +284,14 @@ async function advanceWorkflow(
     const claim = await claimProviderStart(client, run)
     if (!claim) return run
 
+    const broadSearchBudget = reserveAutonomyBudget(
+      readAutonomyBudget(culture.providerSummary),
+      { actions: 1, providerCalls: 1 }
+    )
+    await updateCultureProfileSummary(client, userId, run.id, {
+      ...providerSummary,
+      autonomyBudget: autonomyBudgetToJson(broadSearchBudget),
+    })
     const apify = createApifyClient()
     // Broad discovery is the only initial paid search. The culture-informed
     // slot is reserved for an evidence-driven refinement search.
@@ -413,6 +460,14 @@ async function advanceWorkflow(
     })
   if (hasPendingApproval(culture.providerSummary)) return run
   try {
+    const enrichmentBudget = reserveAutonomyBudget(
+      readAutonomyBudget(culture.providerSummary),
+      { actions: 1, providerCalls: 1 }
+    )
+    await updateCultureProfileSummary(client, userId, run.id, {
+      ...culture.providerSummary,
+      autonomyBudget: autonomyBudgetToJson(enrichmentBudget),
+    })
     const allCreators = [
       ...baselineResults.creators,
       ...cultureResults.creators,
@@ -456,48 +511,130 @@ async function advanceWorkflow(
   const baseCulturePlan =
     readStoredCultureSearchPlan(culture.providerSummary) ??
     createDeterministicSearchPlans(brief, culture.signals).cultureInformed
-  const searchDecision = await decideCreatorSearch(
+  const creatorDecisionEnvironment = decisionModeFromEnvironment()
+  const creatorDecisionBudget = reserveAutonomyBudget(
+    readAutonomyBudget(culture.providerSummary),
+    {
+      actions: 1,
+      modelCalls: creatorDecisionEnvironment.mode === "model" ? 1 : 0,
+    }
+  )
+  await updateCultureProfileSummary(client, userId, run.id, {
+    ...culture.providerSummary,
+    autonomyBudget: autonomyBudgetToJson(creatorDecisionBudget),
+  })
+  const searchDecisionFromAgent = await decideCreatorSearch(
     brief,
     baseCulturePlan,
     culture.signals,
     enrichedCultureCreators,
     searchState.refinementCount
   )
+  const criticBudget = reserveAutonomyBudget(creatorDecisionBudget, {
+    actions: 1,
+  })
+  await updateCultureProfileSummary(client, userId, run.id, {
+    ...culture.providerSummary,
+    autonomyBudget: autonomyBudgetToJson(criticBudget),
+  })
   const evidenceCritic = critiqueEvidence({
     signals: culture.signals,
     culturalReferences: brief.culturalReferences,
     populatedLayerCount: readPopulatedLayerCount(culture.providerSummary),
     creators: enrichedCultureCreators,
+    refinementCount: Math.max(
+      searchState.refinementCount,
+      readQlooRefinementCount(culture.providerSummary)
+    ),
+  })
+  const budgetedSummary: JsonObject = {
+    ...culture.providerSummary,
+    autonomyBudget: autonomyBudgetToJson(criticBudget),
+  }
+  if (
+    evidenceCritic.decision === "refine_qloo" &&
+    readQlooRefinementCount(culture.providerSummary) === 0
+  ) {
+    await refineCultureProfile(
+      client,
+      campaign,
+      run,
+      userId,
+      brief,
+      culture,
+      criticBudget
+    )
+    return run
+  }
+  const assessment = assessCreatorSearchResults(
+    brief,
+    enrichedCultureCreators,
+    searchState.refinementCount
+  )
+  const routedDecision = routeCreatorSearchDecision({
+    agentDecision: searchDecisionFromAgent,
+    evidenceDecision: evidenceCritic.decision,
+    assessment,
+    approvedAction: searchState.approvedAction,
+    approvedPlan: searchState.approvedPlan,
+    approvedSignalIds: searchState.approvedSignalIds,
+    refinementCount: searchState.refinementCount,
+    maxRefinements: MAX_CREATOR_SEARCH_REFINEMENTS,
+    refinementEnabled:
+      process.env.ENABLE_AGENTIC_CREATOR_REFINEMENT === "true",
+    targetedEnrichmentCount: readTargetedEnrichmentCount(culture.providerSummary),
+  })
+  const searchDecision = routedDecision.decision
+  const canRefine = routedDecision.canRefine
+  const refinedPlan = canRefine
+    ? searchState.approvedPlan ?? refineCreatorSearchPlan(
+        baseCulturePlan,
+        brief,
+        culture.signals,
+        searchDecision.action,
+        searchDecision.signalIds
+      )
+    : undefined
+  const approvalPlan = refinedPlan ?? baseCulturePlan
+  const approvalKey = createApprovalKey({
+    action: searchDecision.action,
+    plan: actorPlanToJson(approvalPlan),
+    signalIds: searchDecision.signalIds,
     refinementCount: searchState.refinementCount,
   })
-  const canRefine =
-    process.env.ENABLE_AGENTIC_CREATOR_REFINEMENT === "true" &&
-    searchDecision.decision === "refine_creator_search" &&
-    searchState.refinementCount < MAX_CREATOR_SEARCH_REFINEMENTS
+  const shouldEnrich = routedDecision.shouldEnrich
   const requiresApproval = process.env.AGENTIC_REQUIRE_APPROVAL === "true"
   const approvedAction = searchState.approvedAction
+  const approvedApprovalKey = searchState.approvedApprovalKey
+  const approvalSatisfied =
+    approvedAction === searchDecision.action &&
+    approvedApprovalKey === approvalKey
   const needsApproval =
     requiresApproval &&
-    (canRefine || searchDecision.decision === "request_enrichment")
+    (canRefine || shouldEnrich)
 
-  if (needsApproval && approvedAction !== searchDecision.action) {
+  if (needsApproval && !approvalSatisfied) {
     await updateCultureProfileSummary(client, userId, run.id, {
-      ...culture.providerSummary,
+      ...budgetedSummary,
       creatorSearchAgentState: {
         ...creatorSearchStateToJson(
           brief,
-          assessCreatorSearchResults(brief, enrichedCultureCreators, searchState.refinementCount),
+          assessment,
           searchDecision,
           searchState.refinementCount,
-          baseCulturePlan
+          approvalPlan,
+          false,
+          approvalKey
         ),
         pendingApproval: {
-          action:
-            searchDecision.action === "request_enrichment"
-              ? "request_enrichment"
-              : "broaden_creator_search",
+          action: shouldEnrich
+            ? "request_enrichment"
+            : "broaden_creator_search",
           reason: searchDecision.summary,
           requestedAction: searchDecision.action,
+          approvalKey,
+          plan: actorPlanToJson(approvalPlan),
+          signalIds: searchDecision.signalIds,
         },
       },
       evidenceCritic,
@@ -505,37 +642,163 @@ async function advanceWorkflow(
     return run
   }
 
-  if (canRefine) {
-    const refinedPlan = refineCreatorSearchPlan(
-      baseCulturePlan,
-      brief,
-      culture.signals,
-      searchDecision.action,
-      searchDecision.signalIds
-    )
-    if (refinedPlan) {
-      const refinedAttempt = await startCreatorSearch(
-        createApifyClient(),
-        refinedPlan,
-        `${run.idempotency_key}:culture:refinement:${searchState.refinementCount + 1}`
+  if (shouldEnrich) {
+    const targetedEnrichmentBudget = reserveAutonomyBudget(criticBudget, {
+      actions: 1,
+      providerCalls: 1,
+    })
+    const enrichmentCandidates = enrichedCultureCreators
+      .filter(
+        (creator) =>
+          creator.missingFields.length > 0 ||
+          (creator.qlooSignals?.length ?? 0) === 0
       )
+      .slice(0, 10)
+    const enrichmentIds = enrichmentCandidates.map(
+      (creator) => creator.providerCreatorId
+    )
+    const refinementSummary: JsonObject = {
+      ...budgetedSummary,
+      autonomyBudget: autonomyBudgetToJson(targetedEnrichmentBudget),
+      creatorSearchAgentState: {
+        ...creatorSearchStateToJson(
+          brief,
+          assessment,
+          searchDecision,
+          searchState.refinementCount,
+          baseCulturePlan,
+          approvalSatisfied,
+          approvalKey
+        ),
+        pendingProviderOperation: {
+          toolName: "qloo_creator_enrichment",
+          action: searchDecision.action,
+          inputHash: approvalKey,
+          creatorIds: enrichmentIds,
+        },
+      },
+      evidenceCritic,
+    }
+    await updateCultureProfileSummary(
+      client,
+      userId,
+      run.id,
+      refinementSummary
+    )
+    if (enrichmentCandidates.length > 0) {
+      const targetedCreators = await enrichCreatorsWithQloo(
+        enrichmentCandidates,
+        locationQueryForCampaign(campaign),
+        createQlooClient(),
+        normalizeCultureSignals(culture.signals),
+        {
+          ...(brief.qlooAudienceIds
+            ? { audienceIds: brief.qlooAudienceIds }
+            : {}),
+          ...(brief.qlooAudienceWeight !== undefined
+            ? { audienceWeight: brief.qlooAudienceWeight }
+            : {}),
+          ...(brief.qlooAgeRange ? { ageRange: brief.qlooAgeRange } : {}),
+          ...(brief.qlooGender ? { gender: brief.qlooGender } : {}),
+        },
+        { creatorIds: enrichmentIds, maxCreators: enrichmentIds.length }
+      )
+      const targetedById = new Map(
+        targetedCreators.map((creator) => [creator.providerCreatorId, creator])
+      )
+      enrichedBaselineCreators = enrichedBaselineCreators.map(
+        (creator) => targetedById.get(creator.providerCreatorId) ?? creator
+      )
+      enrichedCultureCreators = enrichedCultureCreators.map(
+        (creator) => targetedById.get(creator.providerCreatorId) ?? creator
+      )
+      await saveCreatorCandidates(client, {
+        ...runOwnership(run, campaign.id, userId),
+        searchVariant: "baseline",
+        creators: enrichedBaselineCreators,
+      })
+      await saveCreatorCandidates(client, {
+        ...runOwnership(run, campaign.id, userId),
+        searchVariant: "culture_informed",
+        creators: enrichedCultureCreators,
+      })
+    }
+    await updateCultureProfileSummary(client, userId, run.id, {
+      ...refinementSummary,
+      creatorSearchAgentState: {
+        ...(refinementSummary.creatorSearchAgentState as JsonObject),
+        pendingProviderOperation: null,
+      },
+      targetedEnrichmentCount: 1,
+      creatorSearchTrace: appendCreatorSearchTrace(
+        culture.providerSummary,
+        searchDecision,
+        enrichmentCandidates.length,
+        baseCulturePlan,
+        approvalKey,
+        "qloo_creator_enrichment"
+      ),
+    })
+    return run
+  }
+
+  if (canRefine && refinedPlan) {
+      const refinementIdempotencyKey = `${run.idempotency_key}:culture:refinement:${searchState.refinementCount + 1}`
+      const refinementBudget = reserveAutonomyBudget(criticBudget, {
+        actions: 1,
+        providerCalls: 1,
+      })
+      const refinementSummary: JsonObject = {
+        ...budgetedSummary,
+        autonomyBudget: autonomyBudgetToJson(refinementBudget),
+      }
       const nextState = creatorSearchStateToJson(
         brief,
-        assessCreatorSearchResults(brief, enrichedCultureCreators, searchState.refinementCount),
+        assessment,
         searchDecision,
         searchState.refinementCount + 1,
         refinedPlan,
-        approvedAction === searchDecision.action
+        approvalSatisfied,
+        approvalKey
       )
       await updateCultureProfileSummary(client, userId, run.id, {
-        ...culture.providerSummary,
-        creatorSearchAgentState: nextState,
+        ...refinementSummary,
+        creatorSearchAgentState: {
+          ...nextState,
+          pendingProviderOperation: {
+            toolName: "apify_creator_search",
+            action: searchDecision.action,
+            idempotencyKey: refinementIdempotencyKey,
+            inputHash: approvalKey,
+          },
+        },
         evidenceCritic,
         creatorSearchTrace: appendCreatorSearchTrace(
           culture.providerSummary,
           searchDecision,
           enrichedCultureCreators.length,
-          refinedPlan
+          refinedPlan,
+          approvalKey
+        ),
+      })
+      const refinedAttempt = await startCreatorSearch(
+        createApifyClient(),
+        refinedPlan,
+        refinementIdempotencyKey
+      )
+      await updateCultureProfileSummary(client, userId, run.id, {
+        ...refinementSummary,
+        creatorSearchAgentState: {
+          ...nextState,
+          pendingProviderOperation: null,
+        },
+        evidenceCritic,
+        creatorSearchTrace: appendCreatorSearchTrace(
+          culture.providerSummary,
+          searchDecision,
+          enrichedCultureCreators.length,
+          refinedPlan,
+          approvalKey
         ),
       })
       run = await updateRunProviderIdForRefinement(
@@ -546,18 +809,18 @@ async function advanceWorkflow(
         refinedAttempt.datasetId
       )
       return run
-    }
   }
 
   await updateCultureProfileSummary(client, userId, run.id, {
-    ...culture.providerSummary,
+    ...budgetedSummary,
     creatorSearchAgentState: creatorSearchStateToJson(
       brief,
-      assessCreatorSearchResults(brief, enrichedCultureCreators, searchState.refinementCount),
+      assessment,
       searchDecision,
       searchState.refinementCount,
       baseCulturePlan,
-      approvedAction === searchDecision.action
+      approvalSatisfied,
+      approvalKey
     ),
     evidenceCritic,
     creatorSearchTrace: appendCreatorSearchTrace(
@@ -576,6 +839,57 @@ async function advanceWorkflow(
     startedAt: run.started_at,
   })
   return transitionRunById(client, run, "scoring")
+}
+
+async function refineCultureProfile(
+  client: Parameters<typeof getCultureProfile>[0],
+  campaign: CampaignRow,
+  run: AnalysisRunRow,
+  userId: string,
+  brief: CampaignBrief,
+  culture: { signals: CultureSignal[]; providerSummary: JsonObject },
+  currentBudget: ReturnType<typeof readAutonomyBudget>
+): Promise<void> {
+  const refinementBudget = reserveAutonomyBudget(currentBudget, {
+    actions: 1,
+    providerCalls: 1,
+  })
+  await updateCultureProfileSummary(client, userId, run.id, {
+    ...culture.providerSummary,
+    autonomyBudget: autonomyBudgetToJson(refinementBudget),
+  })
+  const research = await withProviderRetry(
+    "qloo",
+    () => runCulturalResearchAgent(brief, createQlooClient()),
+    undefined,
+    undefined
+  )
+  const refinementCount = readQlooRefinementCount(culture.providerSummary) + 1
+  const providerSummary: JsonObject = {
+    ...culture.providerSummary,
+    ...research.providerSummary,
+    autonomyBudget: autonomyBudgetToJson(refinementBudget),
+    qlooRefinementCount: refinementCount,
+    agent: {
+      name: "Cultural research agent",
+      version: "v2",
+      refinementCount: research.refinementCount,
+      maxRefinements: 2,
+      decisionPolicy: "validated model action with deterministic evidence critic",
+    },
+    agentState: research.agentState,
+    agentTrace: researchTraceToJson(research.trace),
+  }
+  await saveCultureProfile(client, {
+    campaignId: campaign.id,
+    analysisRunId: run.id,
+    userId,
+    marketCountry: campaign.market_country,
+    signals: research.signals,
+    providerSummary,
+    ...(research.rawPayload ? { rawPayload: research.rawPayload } : {}),
+    observedAt: new Date().toISOString(),
+  })
 }
 
 async function scoreWorkflow(
@@ -917,19 +1231,68 @@ function round(value: number): number {
 
 function readCreatorSearchState(summary: JsonObject): {
   refinementCount: number
-  approvedAction?: string
+  approvedAction?: CreatorSearchAction["action"]
+  approvedApprovalKey?: string
+  approvedPlan?: SearchPlan
+  approvedSignalIds?: string[]
 } {
   const state = summary.creatorSearchAgentState
   if (!isJsonObject(state)) return { refinementCount: 0 }
+  const approvedPlan = readSearchPlan(state.approvedPlan)
   return {
     refinementCount:
       typeof state.refinementCount === "number" && state.refinementCount >= 0
         ? Math.floor(state.refinementCount)
         : 0,
-    ...(typeof state.approvedAction === "string"
+    ...(typeof state.approvedAction === "string" &&
+    isCreatorSearchAction(state.approvedAction)
       ? { approvedAction: state.approvedAction }
       : {}),
+    ...(typeof state.approvedApprovalKey === "string"
+      ? { approvedApprovalKey: state.approvedApprovalKey }
+      : {}),
+    ...(approvedPlan ? { approvedPlan } : {}),
+    ...(Array.isArray(state.approvedSignalIds) &&
+    state.approvedSignalIds.every((value): value is string => typeof value === "string")
+      ? { approvedSignalIds: state.approvedSignalIds }
+      : {}),
   }
+}
+
+function readSearchPlan(value: JsonValue | undefined): SearchPlan | undefined {
+  if (!isJsonObject(value)) return undefined
+  const actorPlan = { ...value }
+  const variant = actorPlan.variant
+  delete actorPlan.variant
+  const parsed = searchPlanSchema.safeParse(actorPlan)
+  return parsed.success && (variant === "baseline" || variant === "culture_informed")
+    ? { ...parsed.data, variant }
+    : undefined
+}
+
+function isCreatorSearchAction(value: string): value is CreatorSearchAction["action"] {
+  return [
+    "broaden_query",
+    "add_cultural_signals",
+    "adjust_market_terms",
+    "request_enrichment",
+    "stop_search",
+  ].includes(value)
+}
+
+function readQlooRefinementCount(summary: JsonObject): number {
+  return isJsonObject(summary) &&
+    typeof summary.qlooRefinementCount === "number" &&
+    summary.qlooRefinementCount >= 0
+    ? Math.floor(summary.qlooRefinementCount)
+    : 0
+}
+
+function readTargetedEnrichmentCount(summary: JsonObject): number {
+  return typeof summary.targetedEnrichmentCount === "number" &&
+    summary.targetedEnrichmentCount >= 0
+    ? Math.floor(summary.targetedEnrichmentCount)
+    : 0
 }
 
 function readStoredCultureSearchPlan(
@@ -951,17 +1314,22 @@ function appendCreatorSearchTrace(
   summary: JsonObject,
   decision: Awaited<ReturnType<typeof decideCreatorSearch>>,
   resultCount: number,
-  plan: SearchPlan
+  plan: SearchPlan,
+  inputHash?: string,
+  toolName = "apify_creator_search"
 ): JsonObject[] {
   const existing = Array.isArray(summary.creatorSearchTrace)
     ? summary.creatorSearchTrace.filter(isJsonObject)
     : []
-  return [
-    ...existing,
-    {
-      toolName: "apify_creator_search",
+  const trace = validateAgentActionTrace({
+      toolName,
       action: decision.action,
       decision: decision.decision,
+      decisionMode: decision.decisionMode,
+      ...(decision.fallbackReason
+        ? { fallbackReason: decision.fallbackReason }
+        : {}),
+      ...(inputHash ? { inputHash } : {}),
       inputSummary: {
         query: plan.query,
         maxResults: plan.maxResults,
@@ -976,8 +1344,8 @@ function appendCreatorSearchTrace(
           : "stop_search",
       rejectedActions: decision.rejectedActions,
       rationale: decision.summary,
-    },
-  ].slice(-4)
+    })
+  return [...existing, trace].slice(-4)
 }
 
 function hasPendingApproval(summary: JsonObject): boolean {

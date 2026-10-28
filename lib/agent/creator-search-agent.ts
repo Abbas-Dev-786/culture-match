@@ -2,6 +2,7 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { generateText, Output } from "ai"
 import { z } from "zod"
 import type {
+  AgentDecisionMode,
   CampaignBrief,
   CultureSignal,
   JsonObject,
@@ -11,6 +12,7 @@ import {
   createAdaptiveSearchPlan,
   type SearchPlan,
 } from "../workflow/search-plan.ts"
+import { decisionModeFromEnvironment } from "./action-trace.ts"
 
 export const MAX_CREATOR_SEARCH_REFINEMENTS = 1
 
@@ -37,6 +39,11 @@ export const creatorSearchActionSchema = z
 
 export type CreatorSearchAction = z.infer<typeof creatorSearchActionSchema>
 
+export type CreatorSearchDecision = CreatorSearchAction & {
+  decisionMode: AgentDecisionMode
+  fallbackReason?: string
+}
+
 export interface CreatorSearchAssessment {
   creatorCount: number
   culturallyRelevantCount: number
@@ -54,16 +61,13 @@ export async function decideCreatorSearch(
   signals: CultureSignal[],
   creators: NormalizedCreator[],
   refinementCount: number
-): Promise<CreatorSearchAction> {
+): Promise<CreatorSearchDecision> {
   const deterministic = assessCreatorSearchResults(brief, creators, refinementCount)
-  const apiKey = process.env.OPENROUTER_API_KEY?.trim()
-  const modelId = process.env.OPENROUTER_MODEL?.trim()
-  if (
-    process.env.ENABLE_AGENTIC_DECISIONS !== "true" ||
-    !apiKey ||
-    !modelId
-  )
-    return toAction(deterministic, signals)
+  const environment = decisionModeFromEnvironment()
+  if (environment.mode === "deterministic_fallback")
+    return toAction(deterministic, signals, environment.fallbackReason)
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim() as string
+  const modelId = process.env.OPENROUTER_MODEL?.trim() as string
 
   try {
     const result = await generateText({
@@ -72,7 +76,7 @@ export async function decideCreatorSearch(
       maxOutputTokens: 500,
       prompt: [
         "Critique this creator search and choose one bounded next action.",
-        "Preserve all campaign constraints. The workflow permits at most one refinement search after the two initial searches.",
+        "Preserve all campaign constraints. The workflow permits at most one refinement search after the broad search.",
         JSON.stringify({
           campaign: {
             productCategory: brief.productCategory,
@@ -92,15 +96,21 @@ export async function decideCreatorSearch(
         }),
       ].join("\n"),
     })
-    if (!result.output) return toAction(deterministic, signals)
+    if (!result.output)
+      return toAction(deterministic, signals, "creator_model_returned_no_action")
     const parsed = creatorSearchActionSchema.parse(result.output)
     const knownSignals = new Set(signals.map((signal) => signal.signalId))
     return {
       ...parsed,
       signalIds: parsed.signalIds.filter((signalId) => knownSignals.has(signalId)),
+      decisionMode: "model",
     }
   } catch {
-    return toAction(deterministic, signals)
+    return toAction(
+      deterministic,
+      signals,
+      "creator_model_action_invalid_or_unavailable"
+    )
   }
 }
 
@@ -191,7 +201,7 @@ export function assessCreatorSearchResults(
       missingEvidenceCount,
       decision: "request_enrichment",
       action: "request_enrichment",
-      summary: "The result set is usable but evidence is sparse; continue with caveats and request enrichment when available.",
+      summary: "The result set is usable but evidence is sparse; request one targeted enrichment pass before scoring.",
     }
   }
   return {
@@ -231,10 +241,11 @@ export function refineCreatorSearchPlan(
 export function creatorSearchStateToJson(
   brief: CampaignBrief,
   assessment: CreatorSearchAssessment,
-  action: CreatorSearchAction,
+  action: CreatorSearchDecision,
   refinementCount: number,
   plan: SearchPlan,
-  approved = false
+  approved = false,
+  approvalKey?: string
 ): JsonObject {
   return {
     objective: "Find culturally relevant creators without weakening campaign constraints",
@@ -255,20 +266,25 @@ export function creatorSearchStateToJson(
     refinementCount,
     budgetRemaining: Math.max(0, MAX_CREATOR_SEARCH_REFINEMENTS - refinementCount),
     refinementEnabled: process.env.ENABLE_AGENTIC_CREATOR_REFINEMENT === "true",
+    decisionMode: action.decisionMode,
+    ...(action.fallbackReason ? { fallbackReason: action.fallbackReason } : {}),
     decision: action.decision,
     ...(action.decision === "accept" || action.decision === "stop_with_caveats"
       ? { stopReason: action.summary }
       : {}),
     approved,
+    ...(approved && approvalKey ? { approvedApprovalKey: approvalKey } : {}),
     campaignObjective: brief.objective,
   }
 }
 
 function toAction(
   assessment: CreatorSearchAssessment,
-  signals: CultureSignal[]
-): CreatorSearchAction {
-  return creatorSearchActionSchema.parse({
+  signals: CultureSignal[],
+  fallbackReason?: string
+): CreatorSearchDecision {
+  return {
+    ...creatorSearchActionSchema.parse({
     action: assessment.action,
     decision: assessment.decision,
     signalIds: signals.slice(0, 3).map((signal) => signal.signalId),
@@ -277,7 +293,10 @@ function toAction(
       assessment.decision === "refine_creator_search"
         ? ["stop_search"]
         : ["broaden_query", "add_cultural_signals", "adjust_market_terms"],
-  })
+    }),
+    decisionMode: "deterministic_fallback",
+    ...(fallbackReason ? { fallbackReason } : {}),
+  }
 }
 
 function normalizeLabel(value: string): string {

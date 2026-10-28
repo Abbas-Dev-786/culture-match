@@ -220,6 +220,7 @@ function toSafeCultureProfile(
   const agentState = readAgentState(summary)
   const creatorSearchTrace = readAgentToolTrace(summary.creatorSearchTrace)
   const evidenceCritic = readEvidenceCritic(summary.evidenceCritic)
+  const autonomyBudget = readAutonomyBudget(summary.autonomyBudget)
 
   return {
     signals,
@@ -238,6 +239,7 @@ function toSafeCultureProfile(
     ...(researchTrace.length > 0 ? { researchTrace } : {}),
     ...(agentState ? { agentState } : {}),
     ...(creatorSearchTrace.length > 0 ? { creatorSearchTrace } : {}),
+    ...(autonomyBudget ? { autonomyBudget } : {}),
     ...(evidenceCritic ? { evidenceCritic } : {}),
   }
 }
@@ -251,6 +253,12 @@ function readAgentToolTrace(value: Json | undefined): AgentToolTrace[] {
       toolName: item.toolName,
       action: item.action,
       ...(typeof item.decision === "string" ? { decision: item.decision } : {}),
+      ...(item.decisionMode === "model" || item.decisionMode === "deterministic_fallback"
+        ? { decisionMode: item.decisionMode }
+        : {}),
+      ...(typeof item.fallbackReason === "string"
+        ? { fallbackReason: item.fallbackReason }
+        : {}),
       ...(typeof item.resultCount === "number" ? { resultCount: item.resultCount } : {}),
       ...(typeof item.evidenceCount === "number" ? { evidenceCount: item.evidenceCount } : {}),
       ...(typeof item.nextAction === "string" ? { nextAction: item.nextAction } : {}),
@@ -313,7 +321,42 @@ function readAgentState(
     ...(typeof value.stopReason === "string"
       ? { stopReason: value.stopReason }
       : {}),
+    ...(value.decisionMode === "model" || value.decisionMode === "deterministic_fallback"
+      ? { decisionMode: value.decisionMode }
+      : {}),
+    ...(typeof value.fallbackReason === "string"
+      ? { fallbackReason: value.fallbackReason }
+      : {}),
+    ...(typeof value.actionCount === "number"
+      ? { actionCount: value.actionCount }
+      : {}),
+    ...(typeof value.modelDecisionCount === "number"
+      ? { modelDecisionCount: value.modelDecisionCount }
+      : {}),
     ...(pendingApproval ? { pendingApproval } : {}),
+  }
+}
+
+function readAutonomyBudget(
+  value: Json | undefined
+): SafeCultureProfile["autonomyBudget"] | undefined {
+  if (!isObject(value)) return undefined
+  const fields = [
+    "maxActions",
+    "actionsUsed",
+    "maxProviderCalls",
+    "providerCallsUsed",
+    "maxModelCalls",
+    "modelCallsUsed",
+  ] as const
+  if (!fields.every((field) => typeof value[field] === "number")) return undefined
+  return {
+    maxActions: value.maxActions as number,
+    actionsUsed: value.actionsUsed as number,
+    maxProviderCalls: value.maxProviderCalls as number,
+    providerCallsUsed: value.providerCallsUsed as number,
+    maxModelCalls: value.maxModelCalls as number,
+    modelCallsUsed: value.modelCallsUsed as number,
   }
 }
 

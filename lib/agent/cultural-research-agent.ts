@@ -2,6 +2,7 @@ import { z } from "zod"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { generateText, Output } from "ai"
 import type {
+  AgentDecisionMode,
   CampaignBrief,
   JsonObject,
   ResearchTraceEntry,
@@ -13,6 +14,7 @@ import {
 import type { QlooClient } from "../tools/qloo/client.ts"
 import { ProviderError } from "../tools/provider-errors.ts"
 import { expandTagQueries } from "../tools/qloo/resolve-tags.ts"
+import { decisionModeFromEnvironment } from "./action-trace.ts"
 
 export const MAX_RESEARCH_REFINEMENTS = 2
 const MAX_AGENT_TAG_QUERIES = 4
@@ -167,6 +169,12 @@ export interface ResearchEvidenceDecision {
   summary: string
 }
 
+export interface ResearchDecisionResult {
+  action?: ResearchSupervisorAction
+  mode: AgentDecisionMode
+  fallbackReason?: string
+}
+
 export async function runCulturalResearchAgent(
   brief: CampaignBrief,
   client: QlooClient
@@ -176,6 +184,8 @@ export async function runCulturalResearchAgent(
   let refinementCount = 0
   let lastResult: CultureResearchResult | undefined
   const rejectedActions: string[] = []
+  const decisionModes: AgentDecisionMode[] = []
+  const fallbackReasons: string[] = []
 
   addTrace(trace, {
     action: "select_research_inputs",
@@ -185,12 +195,16 @@ export async function runCulturalResearchAgent(
   })
 
   for (let attempt = 0; attempt <= MAX_RESEARCH_REFINEMENTS; attempt += 1) {
-    const plannedAction = await chooseResearchAction(
+    const plannedDecision = await chooseResearchAction(
       brief,
       selection,
       lastResult,
       refinementCount
     )
+    decisionModes.push(plannedDecision.mode)
+    if (plannedDecision.fallbackReason)
+      fallbackReasons.push(plannedDecision.fallbackReason)
+    const plannedAction = plannedDecision.action
     if (plannedAction?.action === "stop_research" && lastResult) {
       addTrace(trace, {
         action: "complete_research",
@@ -218,6 +232,9 @@ export async function runCulturalResearchAgent(
     try {
       lastResult = await analyzeCulture(brief, client, new Date().toISOString(), {
         selection,
+        ...(plannedAction?.action
+          ? { requestedAction: plannedAction.action }
+          : {}),
       })
     } catch (error) {
       if (!isSparseResearchError(error) || attempt >= MAX_RESEARCH_REFINEMENTS)
@@ -305,6 +322,12 @@ export async function runCulturalResearchAgent(
       rejectedActions: [...new Set(rejectedActions)].slice(0, 12),
       refinementCount,
       budgetRemaining: Math.max(0, MAX_RESEARCH_REFINEMENTS - refinementCount),
+      decisionMode: decisionModes.includes("model")
+        ? "model"
+        : "deterministic_fallback",
+      actionCount: trace.length,
+      modelDecisionCount: decisionModes.filter((mode) => mode === "model").length,
+      ...(fallbackReasons[0] ? { fallbackReason: fallbackReasons[0] } : {}),
       stopReason:
         refinementCount >= MAX_RESEARCH_REFINEMENTS
           ? "research_refinement_budget_exhausted"
@@ -318,15 +341,11 @@ export async function chooseResearchAction(
   selection: ResearchSelection,
   result: CultureResearchResult | undefined,
   refinementCount: number
-): Promise<ResearchSupervisorAction | undefined> {
-  const apiKey = process.env.OPENROUTER_API_KEY?.trim()
-  const modelId = process.env.OPENROUTER_MODEL?.trim()
-  if (
-    process.env.ENABLE_AGENTIC_DECISIONS !== "true" ||
-    !apiKey ||
-    !modelId
-  )
-    return undefined
+): Promise<ResearchDecisionResult> {
+  const environment = decisionModeFromEnvironment()
+  if (environment.mode === "deterministic_fallback") return environment
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim() as string
+  const modelId = process.env.OPENROUTER_MODEL?.trim() as string
 
   try {
     const response = await generateText({
@@ -360,10 +379,20 @@ export async function chooseResearchAction(
         }),
       ].join("\n"),
     })
-    if (!response.output) return undefined
-    return researchSupervisorActionSchema.parse(response.output)
+    if (!response.output)
+      return {
+        mode: "deterministic_fallback",
+        fallbackReason: "research_model_returned_no_action",
+      }
+    return {
+      action: researchSupervisorActionSchema.parse(response.output),
+      mode: "model",
+    }
   } catch {
-    return undefined
+    return {
+      mode: "deterministic_fallback",
+      fallbackReason: "research_model_action_invalid_or_unavailable",
+    }
   }
 }
 

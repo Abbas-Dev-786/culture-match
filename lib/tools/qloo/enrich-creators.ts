@@ -16,28 +16,50 @@ export interface QlooCreatorConditioning {
   gender?: QlooGender
 }
 
+export interface QlooCreatorEnrichmentOptions {
+  creatorIds?: string[]
+  maxCreators?: number
+}
+
 export async function enrichCreatorsWithQloo(
   creators: NormalizedCreator[],
   locationQuery: string,
   client: QlooClient,
   campaignSignals: CultureSignal[] = [],
-  conditioning: QlooCreatorConditioning = {}
+  conditioning: QlooCreatorConditioning = {},
+  options: QlooCreatorEnrichmentOptions = {}
 ): Promise<NormalizedCreator[]> {
-  const limit = readCreatorLimit()
+  const limit = Math.min(
+    options.maxCreators ?? readCreatorLimit(),
+    readCreatorLimit()
+  )
+  const targetIds = options.creatorIds
+    ? new Set(options.creatorIds)
+    : undefined
+  const targetCreators = targetIds
+    ? creators.filter((creator) => targetIds.has(creator.providerCreatorId))
+    : creators
+  const eligibleIds = new Set(
+    targetCreators.slice(0, limit).map((creator) => creator.providerCreatorId)
+  )
   const enriched = new Map<string, NormalizedCreator>()
   const cache = new Map<string, QlooSignalRecord[]>()
   const personMatches = await discoverPersonMatches(
-    creators.slice(0, limit),
+    targetCreators.slice(0, limit),
     campaignSignals,
     conditioning,
     client
   )
 
-  for (const [index, creator] of creators.entries()) {
+  for (const creator of creators) {
+    if (!eligibleIds.has(creator.providerCreatorId)) {
+      enriched.set(creator.providerCreatorId, creator)
+      continue
+    }
     const postContentSignals = creator.contentSignals.filter(
       (signal) => signal.evidenceKind !== "bio" && signal.sourceField !== "$.creator.bio"
     )
-    if (index >= limit || postContentSignals.length === 0) {
+    if (postContentSignals.length === 0) {
       enriched.set(
         creator.providerCreatorId,
         applyPersonMatch(creator, personMatches)

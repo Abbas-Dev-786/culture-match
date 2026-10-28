@@ -53,6 +53,7 @@ export type WorkflowStage =
 
 export type VerificationState = "verified" | "provider_reported" | "unverified"
 export type MatchConstraintStatus = "matched" | "not_matched" | "unverified"
+export type AgentDecisionMode = "model" | "deterministic_fallback"
 
 export type QlooSignalKind = "entity" | "tag" | "audience" | "locality"
 
@@ -221,6 +222,9 @@ export interface AgentToolTrace {
   toolName: string
   action: string
   decision?: string
+  decisionMode?: AgentDecisionMode
+  fallbackReason?: string
+  inputHash?: string
   resultCount?: number
   evidenceCount?: number
   nextAction?: string
@@ -341,6 +345,14 @@ export interface SafeCultureProfile {
   searchPlanSource?: "deterministic" | "model"
   researchTrace?: ResearchTraceEntry[]
   creatorSearchTrace?: AgentToolTrace[]
+  autonomyBudget?: {
+    maxActions: number
+    actionsUsed: number
+    maxProviderCalls: number
+    providerCallsUsed: number
+    maxModelCalls: number
+    modelCallsUsed: number
+  }
   evidenceCritic?: {
     decision: "accept" | "refine_qloo" | "refine_creator_search" | "stop_with_caveats"
     verifiedQlooSignalCount: number
@@ -355,11 +367,21 @@ export interface SafeCultureProfile {
     refinementCount: number
     budgetRemaining: number
     stopReason?: string
+    decisionMode?: AgentDecisionMode
+    fallbackReason?: string
+    actionCount?: number
+    modelDecisionCount?: number
     pendingApproval?: {
       action: "broaden_creator_search" | "request_enrichment"
       reason: string
       requestedAction?: string
+      approvalKey?: string
+      plan?: JsonObject
+      signalIds?: string[]
     }
+    approvedPlan?: JsonObject
+    approvedSignalIds?: string[]
+    approvedApprovalKey?: string
   }
 }
 

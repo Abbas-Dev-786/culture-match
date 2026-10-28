@@ -49,6 +49,16 @@ export async function POST(
       creatorSearchAgentState: {
         ...state,
         approvedAction: pending.requestedAction,
+        ...(typeof pending.approvalKey === "string"
+          ? { approvedApprovalKey: pending.approvalKey }
+          : {}),
+        ...(isJsonObject(pending.plan)
+          ? { approvedPlan: pending.plan }
+          : {}),
+        ...(Array.isArray(pending.signalIds) &&
+        pending.signalIds.every((value): value is string => typeof value === "string")
+          ? { approvedSignalIds: pending.signalIds }
+          : {}),
         pendingApproval: null,
       },
     })

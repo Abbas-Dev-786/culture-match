@@ -36,6 +36,37 @@ export function CultureProfile({
           <SummaryMetric label="Search plan" value={profile.searchPlanSource ?? "deterministic"} detail="Recommendation strategy" />
         </div>
 
+        {profile.autonomyBudget ? (
+          <div className="grid gap-3 sm:grid-cols-3">
+            <SummaryMetric
+              label="Agent actions"
+              value={`${profile.autonomyBudget.actionsUsed}/${profile.autonomyBudget.maxActions}`}
+              detail="Used / maximum"
+            />
+            <SummaryMetric
+              label="Provider calls"
+              value={`${profile.autonomyBudget.providerCallsUsed}/${profile.autonomyBudget.maxProviderCalls}`}
+              detail="Used / maximum"
+            />
+            <SummaryMetric
+              label="Model calls"
+              value={`${profile.autonomyBudget.modelCallsUsed}/${profile.autonomyBudget.maxModelCalls}`}
+              detail="Used / maximum"
+            />
+          </div>
+        ) : null}
+
+        {profile.agentState?.decisionMode === "deterministic_fallback" ? (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">Deterministic fallback</Badge>
+              <span className="text-muted-foreground">
+                {profile.agentState.fallbackReason ?? "The configured agent model was unavailable."}
+              </span>
+            </div>
+          </div>
+        ) : null}
+
         {profile.agentState?.pendingApproval && onApprove ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-800 dark:bg-amber-950/30">
             <div>
@@ -130,6 +161,7 @@ export function CultureProfile({
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="font-medium">{entry.action.replaceAll("_", " ")}</span>
                         {entry.decision ? <Badge variant="outline">{entry.decision.replaceAll("_", " ")}</Badge> : null}
+                        {entry.decisionMode ? <Badge variant="secondary">{entry.decisionMode === "model" ? "model" : "fallback"}</Badge> : null}
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {entry.resultCount ?? 0} results · {entry.evidenceCount ?? 0} evidence signals · next: {entry.nextAction ?? "stop"}

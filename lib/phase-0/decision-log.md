@@ -46,7 +46,7 @@
 ## Model
 
 - Installed provider package: `@openrouter/ai-sdk-provider`.
-- MVP provider: OpenRouter with the pinned model `qwen/qwen3.8-27b:free`, configured by `OPENROUTER_MODEL`.
+- MVP provider: OpenRouter with the free-model router `openrouter/free`, configured by `OPENROUTER_MODEL`.
 - Model selection reason: the selected endpoint documents JSON-schema structured-output support, which matches the TDD requirement for schema-validated AI SDK output.
 - Model limitation: the free endpoint is rate-limited and must not receive confidential or personal data; model use remains optional.
 - The model is optional for Phase 0 and must not determine numeric scores.

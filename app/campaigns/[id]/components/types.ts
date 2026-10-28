@@ -41,6 +41,8 @@ export interface CultureProfileView {
     toolName: string
     action: string
     decision?: string
+    decisionMode?: "model" | "deterministic_fallback"
+    fallbackReason?: string
     resultCount?: number
     evidenceCount?: number
     nextAction?: string
@@ -56,11 +58,23 @@ export interface CultureProfileView {
     caveats: string[]
     summary: string
   }
+  autonomyBudget?: {
+    maxActions: number
+    actionsUsed: number
+    maxProviderCalls: number
+    providerCallsUsed: number
+    maxModelCalls: number
+    modelCallsUsed: number
+  }
   agentState?: {
     objective: string
     refinementCount: number
     budgetRemaining: number
     stopReason?: string
+    decisionMode?: "model" | "deterministic_fallback"
+    fallbackReason?: string
+    actionCount?: number
+    modelDecisionCount?: number
     pendingApproval?: {
       action: "broaden_creator_search" | "request_enrichment"
       reason: string

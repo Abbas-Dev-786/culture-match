@@ -1,9 +1,26 @@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { CheckCircle2, GitBranch, Search, Sparkles } from "lucide-react"
+import {
+  Trace,
+  TraceDescription,
+  TraceIcon,
+  TraceLine,
+  TraceTitle,
+} from "@/components/ui/trace"
 import type { CultureProfileView } from "./types"
 
-export function CultureProfile({ profile }: { profile: CultureProfileView }) {
+export function CultureProfile({
+  profile,
+  onApprove,
+  isApproving = false,
+}: {
+  profile: CultureProfileView
+  onApprove?: () => void
+  isApproving?: boolean
+}) {
   return (
     <Card className="print-break-inside-avoid">
       <CardHeader>
@@ -18,6 +35,20 @@ export function CultureProfile({ profile }: { profile: CultureProfileView }) {
           <SummaryMetric label="References" value={profile.resolvedReferences.length} detail={`${profile.unresolvedReferences.length} unresolved`} />
           <SummaryMetric label="Search plan" value={profile.searchPlanSource ?? "deterministic"} detail="Recommendation strategy" />
         </div>
+
+        {profile.agentState?.pendingApproval && onApprove ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+            <div>
+              <p className="font-medium">Agent approval needed</p>
+              <p className="mt-1 text-muted-foreground">
+                {profile.agentState.pendingApproval.reason}
+              </p>
+            </div>
+            <Button onClick={onApprove} disabled={isApproving}>
+              {isApproving ? "Approving..." : "Approve next search"}
+            </Button>
+          </div>
+        ) : null}
 
         <div className="rounded-xl border bg-muted/30 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -48,6 +79,83 @@ export function CultureProfile({ profile }: { profile: CultureProfileView }) {
         </div>
 
         <Accordion multiple>
+          {profile.researchTrace && profile.researchTrace.length > 0 ? (
+            <AccordionItem value="agent-trace">
+              <AccordionTrigger>
+                <span>
+                  Cultural research agent trace
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    {profile.researchTrace.length} actions · bounded refinement loop
+                  </span>
+                </span>
+              </AccordionTrigger>
+              <AccordionContent>
+                <Trace>
+                  {profile.researchTrace.map((entry) => (
+                    <TraceLine key={`${entry.step}-${entry.action}`}>
+                      <TraceIcon>{traceIcon(entry.action)}</TraceIcon>
+                      <TraceTitle>{entry.summary}</TraceTitle>
+                      <TraceDescription>
+                        {entry.action.replaceAll("_", " ")}
+                      </TraceDescription>
+                      {entry.evidence ? (
+                        <TraceDescription>
+                          {entry.evidence.evidenceBearingSignalCount} evidence-bearing · {entry.evidence.signalCount} signals
+                        </TraceDescription>
+                      ) : null}
+                    </TraceLine>
+                  ))}
+                </Trace>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  The supervisor selected bounded tools and inputs, inspected Qloo evidence, and refined only within the configured budget. Creator scoring remains deterministic.
+                </p>
+              </AccordionContent>
+            </AccordionItem>
+          ) : null}
+
+          {profile.creatorSearchTrace && profile.creatorSearchTrace.length > 0 ? (
+            <AccordionItem value="creator-agent-trace">
+              <AccordionTrigger>
+                <span>
+                  Creator search agent trace
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                    {profile.creatorSearchTrace.length} tool outcomes
+                  </span>
+                </span>
+              </AccordionTrigger>
+              <AccordionContent>
+                <div className="grid gap-2">
+                  {profile.creatorSearchTrace.map((entry, index) => (
+                    <div key={`${entry.toolName}-${index}`} className="rounded-lg border p-3 text-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-medium">{entry.action.replaceAll("_", " ")}</span>
+                        {entry.decision ? <Badge variant="outline">{entry.decision.replaceAll("_", " ")}</Badge> : null}
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {entry.resultCount ?? 0} results · {entry.evidenceCount ?? 0} evidence signals · next: {entry.nextAction ?? "stop"}
+                      </p>
+                      {entry.rationale ? <p className="mt-1 text-xs text-muted-foreground">{entry.rationale}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          ) : null}
+
+          {profile.evidenceCritic ? (
+            <AccordionItem value="evidence-critic">
+              <AccordionTrigger>Evidence critic</AccordionTrigger>
+              <AccordionContent>
+                <p className="text-sm text-muted-foreground">{profile.evidenceCritic.summary}</p>
+                {profile.evidenceCritic.caveats.length > 0 ? (
+                  <ul className="mt-2 list-disc pl-5 text-sm text-muted-foreground">
+                    {profile.evidenceCritic.caveats.map((caveat) => <li key={caveat}>{caveat}</li>)}
+                  </ul>
+                ) : null}
+              </AccordionContent>
+            </AccordionItem>
+          ) : null}
+
           {profile.fingerprint ? (
             <AccordionItem value="fingerprint">
               <AccordionTrigger>
@@ -141,6 +249,16 @@ export function CultureProfile({ profile }: { profile: CultureProfileView }) {
       </CardContent>
     </Card>
   )
+}
+
+function traceIcon(
+  action: NonNullable<CultureProfileView["researchTrace"]>[number]["action"]
+) {
+  if (action === "query_qloo") return <Search className="size-4" />
+  if (action === "refine_research_inputs") return <GitBranch className="size-4" />
+  if (action === "complete_research") return <CheckCircle2 className="size-4" />
+  if (action === "inspect_evidence") return <Sparkles className="size-4" />
+  return <Sparkles className="size-4" />
 }
 
 function SummaryMetric({ label, value, detail }: { label: string; value: number | string; detail: string }) {

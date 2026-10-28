@@ -241,6 +241,59 @@ test("Qloo uses a permissive operator for sparse tag resolution", () => {
   assert.equal(getTagOperator(5), "intersection")
 })
 
+test("Qloo falls back when a combined entity and tag query is rejected", async () => {
+  let combinedRequestRejected = false
+  const client = createQlooClient({
+    baseUrl: "https://qloo.test",
+    searchUrl: "https://qloo.test/search",
+    insightsUrl: "https://qloo.test/v2/insights",
+    compareUrl: "https://qloo.test/v2/analysis/compare",
+    tagsUrl: "https://qloo.test/v2/tags",
+    apiKey: "test-key",
+    fetchImpl: async (input, init) => {
+      if (input.includes("/search")) {
+        const query = new URL(input).searchParams.get("query") ?? "Reference"
+        return new Response(
+          JSON.stringify({
+            results: [{ entity_id: `${query}-id`, name: query, types: ["urn:entity:brand"] }],
+          }),
+          { status: 200 }
+        )
+      }
+      if (input.includes("/tags")) {
+        const query = new URL(input).searchParams.get("filter.query") ?? "Culture"
+        return new Response(
+          JSON.stringify({
+            results: [{ tag_id: `${query}-tag`, name: query, types: ["urn:tag:style:qloo"] }],
+          }),
+          { status: 200 }
+        )
+      }
+      if (input.includes("/compare")) return new Response(JSON.stringify({ results: [] }), { status: 200 })
+      if (init?.body) {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>
+        const entities = body["signal.interests.entities"]
+        const tags = body["signal.interests.tags"]
+        if (Array.isArray(entities) && entities.length > 1 && Array.isArray(tags) && tags.length > 0) {
+          combinedRequestRejected = true
+          return new Response(JSON.stringify({ errors: [{ message: "filter.tag.types must be an array of at least one element" }] }), { status: 400 })
+        }
+      }
+      return new Response(JSON.stringify(tasteFixture), { status: 200 })
+    },
+  })
+
+  const result = await analyzeCulture(
+    {
+      ...brief,
+      culturalReferences: ["Nike", "Cultural Reference"],
+    },
+    client
+  )
+  assert.equal(combinedRequestRejected, true)
+  assert.ok(result.signals.length > 0)
+})
+
 test("Qloo uses GET scalar weights and POST per-entity weights", async () => {
   const requests: Array<{ method: string; url: URL; body: unknown }> = []
   const client = createQlooClient({

@@ -31,6 +31,7 @@ export function CampaignView({ campaignId }: CampaignViewProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [isMutating, setIsMutating] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  const [isApproving, setIsApproving] = useState(false)
   const [pausedCampaignId, setPausedCampaignId] = useState<string>()
   const pollCount = useRef(0)
 
@@ -54,9 +55,9 @@ export function CampaignView({ campaignId }: CampaignViewProps) {
           return
         }
         setData(body)
-        if (body.run?.status === "completed") {
-          const completedResults = await fetchCampaignResults(campaignId)
-          if (active) setResults(completedResults)
+        if (body.run?.status === "completed" || body.run?.status === "running") {
+          const currentResults = await fetchCampaignResults(campaignId)
+          if (active) setResults(currentResults)
         }
         if (
           body.run?.status === "completed" ||
@@ -143,6 +144,29 @@ export function CampaignView({ campaignId }: CampaignViewProps) {
     }
   }
 
+  async function approveAgentSearch(): Promise<void> {
+    setIsApproving(true)
+    setActionMessage(undefined)
+    try {
+      const response = await fetch(`/api/campaigns/${campaignId}/agent-approval`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approved: true }),
+      })
+      const body = (await response.json()) as CampaignStatusResponse
+      if (!response.ok) {
+        setActionMessage(body.error?.message ?? "Unable to approve the agent action")
+        return
+      }
+      setData(body)
+      setResults(await fetchCampaignResults(campaignId))
+    } catch {
+      setActionMessage("Unable to reach the campaign service.")
+    } finally {
+      setIsApproving(false)
+    }
+  }
+
   const baselineMatches = results?.matches?.filter((match) => match.variant === "baseline") ?? []
   const cultureMatches = results?.matches?.filter((match) => match.variant === "culture_informed") ?? []
 
@@ -213,7 +237,13 @@ export function CampaignView({ campaignId }: CampaignViewProps) {
               onRetry={() => void runAction("retry")}
             />
 
-            {results?.cultureProfile ? <CultureProfile profile={results.cultureProfile} /> : null}
+            {results?.cultureProfile ? (
+              <CultureProfile
+                profile={results.cultureProfile}
+                isApproving={isApproving}
+                onApprove={() => void approveAgentSearch()}
+              />
+            ) : null}
 
             {results?.comparison ? (
               <CultureLift

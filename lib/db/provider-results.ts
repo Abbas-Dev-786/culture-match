@@ -77,6 +77,25 @@ export async function saveCultureProfile(
     )
 }
 
+export async function updateCultureProfileSummary(
+  client: SupabaseClient<Database>,
+  userId: string,
+  analysisRunId: string,
+  providerSummary: JsonObject
+): Promise<void> {
+  const result = await client
+    .from("culture_profiles")
+    .update({ provider_summary: providerSummary })
+    .eq("analysis_run_id", analysisRunId)
+    .eq("user_id", userId)
+  if (result.error)
+    throw new ApplicationError(
+      "DATABASE_ERROR",
+      500,
+      "Unable to persist agent state"
+    )
+}
+
 export async function saveCreatorCandidates(
   client: SupabaseClient<Database>,
   input: {

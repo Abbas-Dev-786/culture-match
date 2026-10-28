@@ -4,6 +4,7 @@ import { getCreatorMatches } from "@/lib/db/matches"
 import { getCultureProfile } from "@/lib/db/provider-results"
 import type {
   BaselineComparison,
+  AgentToolTrace,
   CultureSignal,
   EvidenceRef,
   QlooAgeRange,
@@ -13,6 +14,8 @@ import type {
   QlooHeatmap,
   QlooGender,
   QlooSignalRecord,
+  ResearchFocus,
+  ResearchTraceEntry,
   SafeCultureProfile,
   SafeCultureReference,
   ScoreComponent,
@@ -213,6 +216,10 @@ function toSafeCultureProfile(
       ? summary.searchPlanSource
       : undefined
   const fingerprint = readFingerprint(summary.fingerprint)
+  const researchTrace = readResearchTrace(summary.agentTrace)
+  const agentState = readAgentState(summary)
+  const creatorSearchTrace = readAgentToolTrace(summary.creatorSearchTrace)
+  const evidenceCritic = readEvidenceCritic(summary.evidenceCritic)
 
   return {
     signals,
@@ -228,7 +235,216 @@ function toSafeCultureProfile(
         ? summary.signalCount
         : signals.length,
     ...(searchPlanSource ? { searchPlanSource } : {}),
+    ...(researchTrace.length > 0 ? { researchTrace } : {}),
+    ...(agentState ? { agentState } : {}),
+    ...(creatorSearchTrace.length > 0 ? { creatorSearchTrace } : {}),
+    ...(evidenceCritic ? { evidenceCritic } : {}),
   }
+}
+
+function readAgentToolTrace(value: Json | undefined): AgentToolTrace[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (!isObject(item) || typeof item.toolName !== "string" || typeof item.action !== "string")
+      return []
+    return [{
+      toolName: item.toolName,
+      action: item.action,
+      ...(typeof item.decision === "string" ? { decision: item.decision } : {}),
+      ...(typeof item.resultCount === "number" ? { resultCount: item.resultCount } : {}),
+      ...(typeof item.evidenceCount === "number" ? { evidenceCount: item.evidenceCount } : {}),
+      ...(typeof item.nextAction === "string" ? { nextAction: item.nextAction } : {}),
+      ...(Array.isArray(item.rejectedActions)
+        ? { rejectedActions: item.rejectedActions.filter(isString) }
+        : {}),
+      ...(typeof item.rationale === "string" ? { rationale: item.rationale } : {}),
+    }]
+  })
+}
+
+function readEvidenceCritic(
+  value: Json | undefined
+): SafeCultureProfile["evidenceCritic"] | undefined {
+  if (!isObject(value)) return undefined
+  if (
+    (value.decision !== "accept" &&
+      value.decision !== "refine_qloo" &&
+      value.decision !== "refine_creator_search" &&
+      value.decision !== "stop_with_caveats") ||
+    typeof value.verifiedQlooSignalCount !== "number" ||
+    typeof value.representedReferenceCount !== "number" ||
+    typeof value.populatedEvidenceLayerCount !== "number" ||
+    typeof value.creatorEvidenceCoverage !== "number" ||
+    !Array.isArray(value.caveats) ||
+    typeof value.summary !== "string"
+  )
+    return undefined
+  return {
+    decision: value.decision,
+    verifiedQlooSignalCount: value.verifiedQlooSignalCount,
+    representedReferenceCount: value.representedReferenceCount,
+    populatedEvidenceLayerCount: value.populatedEvidenceLayerCount,
+    creatorEvidenceCoverage: value.creatorEvidenceCoverage,
+    caveats: value.caveats.filter(isString),
+    summary: value.summary,
+  }
+}
+
+function readAgentState(
+  summary: { [key: string]: Json }
+): SafeCultureProfile["agentState"] | undefined {
+  const value = isObject(summary.creatorSearchAgentState)
+    ? summary.creatorSearchAgentState
+    : isObject(summary.agentState)
+      ? summary.agentState
+      : undefined
+  if (!value || typeof value.objective !== "string") return undefined
+  const refinementCount =
+    typeof value.refinementCount === "number" ? value.refinementCount : 0
+  const budgetRemaining =
+    typeof value.budgetRemaining === "number" ? value.budgetRemaining : 0
+  const pendingApproval = isObject(value.pendingApproval)
+    ? readPendingApproval(value.pendingApproval)
+    : undefined
+  return {
+    objective: value.objective,
+    refinementCount,
+    budgetRemaining,
+    ...(typeof value.stopReason === "string"
+      ? { stopReason: value.stopReason }
+      : {}),
+    ...(pendingApproval ? { pendingApproval } : {}),
+  }
+}
+
+function readPendingApproval(
+  value: { [key: string]: Json }
+): NonNullable<SafeCultureProfile["agentState"]>["pendingApproval"] | undefined {
+  if (
+    (value.action !== "broaden_creator_search" &&
+      value.action !== "request_enrichment") ||
+    typeof value.reason !== "string"
+  )
+    return undefined
+  return {
+    action: value.action,
+    reason: value.reason,
+    ...(typeof value.requestedAction === "string"
+      ? { requestedAction: value.requestedAction }
+      : {}),
+  }
+}
+
+function readResearchTrace(value: Json | undefined): ResearchTraceEntry[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item, index) => {
+    if (!isObject(item)) return []
+    if (
+      typeof item.action !== "string" ||
+      !isResearchFocus(item.focus) ||
+      item.status !== "completed" ||
+      typeof item.summary !== "string"
+    )
+      return []
+    if (!isResearchAction(item.action)) return []
+    const evidence = readResearchEvidence(item.evidence)
+    const inputCounts = readResearchInputCounts(item.inputCounts)
+    return [
+      {
+        step: typeof item.step === "number" ? item.step : index + 1,
+        action: item.action,
+        focus: item.focus,
+        status: "completed" as const,
+        summary: item.summary,
+        ...(isResearchDecision(item.decision)
+          ? { decision: item.decision }
+          : {}),
+        ...(inputCounts ? { inputCounts } : {}),
+        ...(evidence ? { evidence } : {}),
+        ...(typeof item.toolName === "string"
+          ? { toolName: item.toolName }
+          : {}),
+        ...(typeof item.resultCount === "number"
+          ? { resultCount: item.resultCount }
+          : {}),
+        ...(typeof item.evidenceCount === "number"
+          ? { evidenceCount: item.evidenceCount }
+          : {}),
+        ...(typeof item.nextAction === "string"
+          ? { nextAction: item.nextAction }
+          : {}),
+        ...(Array.isArray(item.rejectedActions)
+          ? {
+              rejectedActions: item.rejectedActions.filter(isString),
+            }
+          : {}),
+        ...(typeof item.rationale === "string"
+          ? { rationale: item.rationale }
+          : {}),
+      },
+    ]
+  })
+}
+
+function readResearchInputCounts(
+  value: Json | undefined
+): ResearchTraceEntry["inputCounts"] | undefined {
+  if (!isObject(value) || typeof value.includesBrand !== "boolean") return undefined
+  if (
+    typeof value.referenceCount !== "number" ||
+    typeof value.tagQueryCount !== "number"
+  )
+    return undefined
+  return {
+    includesBrand: value.includesBrand,
+    referenceCount: value.referenceCount,
+    tagQueryCount: value.tagQueryCount,
+  }
+}
+
+function readResearchEvidence(
+  value: Json | undefined
+): ResearchTraceEntry["evidence"] | undefined {
+  if (!isObject(value)) return undefined
+  const keys = [
+    "signalCount",
+    "evidenceBearingSignalCount",
+    "affinitySignalCount",
+    "populatedLayerCount",
+    "unresolvedInputCount",
+  ] as const
+  if (keys.some((key) => typeof value[key] !== "number")) return undefined
+  return {
+    signalCount: value.signalCount as number,
+    evidenceBearingSignalCount: value.evidenceBearingSignalCount as number,
+    affinitySignalCount: value.affinitySignalCount as number,
+    populatedLayerCount: value.populatedLayerCount as number,
+    unresolvedInputCount: value.unresolvedInputCount as number,
+  }
+}
+
+function isResearchAction(value: string): value is ResearchTraceEntry["action"] {
+  return [
+    "select_research_inputs",
+    "query_qloo",
+    "inspect_evidence",
+    "refine_research_inputs",
+    "complete_research",
+  ].includes(value as ResearchTraceEntry["action"])
+}
+
+function isResearchDecision(
+  value: Json | undefined
+): value is NonNullable<ResearchTraceEntry["decision"]> {
+  return value === "continue" || value === "refine" || value === "stop"
+}
+
+function isResearchFocus(value: Json | undefined): value is ResearchFocus {
+  return (
+    value === "campaign_fingerprint" ||
+    value === "market_context" ||
+    value === "product_context"
+  )
 }
 
 function readFingerprint(value: Json | undefined): QlooFingerprint | undefined {

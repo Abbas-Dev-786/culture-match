@@ -17,6 +17,7 @@ import {
   isCoveredByResolvedTag,
   resolveCampaignSignals,
   resolvedTagToJson,
+  type CampaignResearchSelection,
   type CampaignSignalResolution,
 } from "./resolve-campaign-signals.ts"
 
@@ -32,6 +33,10 @@ export interface CultureResearchResult {
   fingerprint: QlooFingerprint
   providerSummary: JsonObject
   rawPayload?: JsonObject
+}
+
+export interface CultureResearchOptions {
+  selection?: CampaignResearchSelection
 }
 
 export interface TasteProfileResult {
@@ -107,9 +112,15 @@ export async function buildTasteProfile(
 export async function analyzeCulture(
   brief: CampaignBrief,
   client: QlooClient,
-  observedAt = new Date().toISOString()
+  observedAt = new Date().toISOString(),
+  options?: CultureResearchOptions
 ): Promise<CultureResearchResult> {
-  const resolution = await resolveCampaignSignals(brief, client, observedAt)
+  const resolution = await resolveCampaignSignals(
+    brief,
+    client,
+    observedAt,
+    options?.selection
+  )
   const { resolvedReferences, resolvedTags, locationQuery } = resolution
   const tasteProfile = await buildTasteProfile(brief, resolution, client, observedAt)
   const { signals, layers, primaryLayer } = tasteProfile
@@ -222,6 +233,16 @@ export async function analyzeCulture(
         gender: brief.qlooGender ?? null,
         explainability: true,
       },
+      ...(options?.selection
+        ? {
+            researchSelection: {
+              focus: options.selection.focus,
+              includeBrand: options.selection.includeBrand,
+              references: options.selection.references,
+              tagQueries: options.selection.tagQueries,
+            },
+          }
+        : {}),
       observedAt,
     },
     ...(rawPayload ? { rawPayload } : {}),
@@ -349,6 +370,48 @@ async function loadFingerprintLayers(
   const results: FingerprintLayerResult[] = []
   for (const spec of specs) {
     const operator = spec.tagSignals.length > 0 ? spec.operator : undefined
+    const insight = await loadLayerInsights(
+      client,
+      brief,
+      locationQuery,
+      spec,
+      operator
+    )
+    const payload = insight.payload
+    const parsed = parseTasteResponse(payload, observedAt, spec.group)
+    const inputSignals = [
+      ...entityInputSignals(references, spec.group, spec.entitySignals),
+      ...tagInputSignals(tags, spec.group, spec.tagSignals),
+    ]
+    results.push({
+      ...spec,
+      operator: insight.operator,
+      signals: dedupeSignals([
+        ...inputSignals.map(signalToRecord),
+        ...parsed.signals.map(signalToRecord),
+      ]),
+      location: parsed.location,
+      payload: isJsonObject(payload) ? payload : {},
+      entitySignalCount: insight.entitySignalCount,
+      tagSignalCount: insight.tagSignalCount,
+    })
+  }
+  return results
+}
+
+async function loadLayerInsights(
+  client: QlooClient,
+  brief: CampaignBrief,
+  locationQuery: string,
+  spec: LayerSpec,
+  operator: "union" | "intersection" | undefined
+): Promise<{
+  payload: unknown
+  operator?: "union" | "intersection"
+  entitySignalCount: number
+  tagSignalCount: number
+}> {
+  try {
     const payload = await client.getInsights({
       filterType: "urn:tag",
       locationQuery,
@@ -360,25 +423,63 @@ async function loadFingerprintLayers(
       take: readTake(),
       explainability: true,
     })
-    const parsed = parseTasteResponse(payload, observedAt, spec.group)
-    const inputSignals = [
-      ...entityInputSignals(references, spec.group, spec.entitySignals),
-      ...tagInputSignals(tags, spec.group, spec.tagSignals),
-    ]
-    results.push({
-      ...spec,
+    return {
+      payload,
       operator,
-      signals: dedupeSignals([
-        ...inputSignals.map(signalToRecord),
-        ...parsed.signals.map(signalToRecord),
-      ]),
-      location: parsed.location,
-      payload: isJsonObject(payload) ? payload : {},
       entitySignalCount: spec.entitySignals.length,
       tagSignalCount: spec.tagSignals.length,
-    })
+    }
+  } catch (error) {
+    if (
+      spec.group !== "combined" ||
+      !(error instanceof ProviderError) ||
+      error.code !== "INVALID_PARAMETERS" ||
+      spec.tagSignals.length === 0
+    ) {
+      throw error
+    }
   }
-  return results
+
+  try {
+    const payload = await client.getInsights({
+      filterType: "urn:tag",
+      locationQuery,
+      tagSignals: spec.tagSignals,
+      tagTypes: spec.tagTypes,
+      tagOperator: "union",
+      ...conditioningInput(brief),
+      take: readTake(),
+      explainability: true,
+    })
+    return {
+      payload,
+      operator: "union",
+      entitySignalCount: 0,
+      tagSignalCount: spec.tagSignals.length,
+    }
+  } catch (error) {
+    if (
+      !(error instanceof ProviderError) ||
+      error.code !== "INVALID_PARAMETERS" ||
+      spec.entitySignals.length === 0
+    ) {
+      throw error
+    }
+  }
+
+  const payload = await client.getInsights({
+    filterType: "urn:tag",
+    locationQuery,
+    entitySignals: spec.entitySignals,
+    ...conditioningInput(brief),
+    take: readTake(),
+    explainability: true,
+  })
+  return {
+    payload,
+    entitySignalCount: spec.entitySignals.length,
+    tagSignalCount: 0,
+  }
 }
 
 function conditioningInput(brief: CampaignBrief) {

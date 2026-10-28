@@ -139,6 +139,43 @@ export function validateSearchPlanAgainstCampaign(
   return parsed
 }
 
+export function createAdaptiveSearchPlan(
+  basePlan: SearchPlan,
+  brief: CampaignBrief,
+  signals: CultureSignal[],
+  action: "broaden_query" | "add_cultural_signals" | "adjust_market_terms",
+  selectedSignalIds?: string[]
+): SearchPlan {
+  const requestedSignals = selectedSignalIds
+    ? signals.filter((signal) => selectedSignalIds.includes(signal.signalId))
+    : []
+  const selected = requestedSignals.length > 0 ? requestedSignals : signals
+  const signalTerms = selected
+    .filter((signal) => signal.evidence.verification !== "unverified")
+    .sort((left, right) => (right.affinity ?? 0) - (left.affinity ?? 0))
+    .slice(0, 3)
+    .map((signal) => signal.name)
+  const marketTerms = [
+    brief.targetMarket.city,
+    brief.targetMarket.region,
+    brief.targetMarket.country,
+  ].filter((value): value is string => Boolean(value?.trim()))
+  const suffix =
+    action === "broaden_query"
+      ? " emerging community creators"
+      : action === "add_cultural_signals"
+        ? ` ${signalTerms.join(" ")}`
+        : ` ${marketTerms.join(" ")}`
+  const query = `${basePlan.query} ${suffix}`.replace(/\s+/g, " ").trim()
+  const actorPlan: Record<string, unknown> = { ...basePlan }
+  delete actorPlan.variant
+  const parsed = searchPlanSchema.parse({
+    ...actorPlan,
+    query: query.slice(0, 500),
+  })
+  return { ...validateSearchPlanAgainstCampaign(parsed, brief), variant: basePlan.variant }
+}
+
 export function actorPlanToJson(plan: SearchPlan): JsonObject {
   return { ...plan }
 }

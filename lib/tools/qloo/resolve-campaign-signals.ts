@@ -1,4 +1,8 @@
-import type { CampaignBrief, JsonObject } from "../../domain/types.ts"
+import type {
+  CampaignBrief,
+  JsonObject,
+  ResearchFocus,
+} from "../../domain/types.ts"
 import { ProviderError } from "../provider-errors.ts"
 import type { QlooClient } from "./client.ts"
 import { resolveEntities, type ResolvedEntity } from "./resolve-entities.ts"
@@ -14,13 +18,27 @@ export interface CampaignSignalResolution {
   locationQuery: string
 }
 
+export interface CampaignResearchSelection {
+  focus: ResearchFocus
+  includeBrand: boolean
+  references: string[]
+  tagQueries: string[]
+}
+
 export async function resolveCampaignSignals(
   brief: CampaignBrief,
   client: QlooClient,
-  observedAt = new Date().toISOString()
+  observedAt = new Date().toISOString(),
+  selection?: CampaignResearchSelection
 ): Promise<CampaignSignalResolution> {
+  const referenceInputs = selection
+    ? [
+        ...(selection.includeBrand ? [brief.brandName] : []),
+        ...selection.references,
+      ]
+    : [brief.brandName, ...brief.culturalReferences]
   const resolvedReferences = await resolveEntities(
-    [...new Set([brief.brandName, ...brief.culturalReferences])],
+    [...new Set(referenceInputs)],
     client,
     observedAt
   )
@@ -39,16 +57,22 @@ export async function resolveCampaignSignals(
       ? [tagFallbackToResolvedTag(reference.reference, reference.tagFallback)]
       : []
   )
+  const tagQueries = selection
+    ? selection.tagQueries
+    : [
+        brief.productCategory,
+        brief.productDescription,
+        ...brief.culturalReferences.filter(
+          (reference) =>
+            !resolvedReferenceNames.has(reference) &&
+            !tagFallbackReferences.has(reference)
+        ),
+      ]
   const searchedTags = await resolveTagsWithFallback(
-    expandTagQueries([
-      brief.productCategory,
-      brief.productDescription,
-      ...brief.culturalReferences.filter(
-        (reference) =>
-          !resolvedReferenceNames.has(reference) &&
-          !tagFallbackReferences.has(reference)
-      ),
-    ]),
+    expandTagQueries(tagQueries.filter(
+      (query, index, queries) =>
+        Boolean(query.trim()) && queries.indexOf(query) === index
+    )),
     client,
     observedAt
   )

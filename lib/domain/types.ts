@@ -170,6 +170,64 @@ export interface CultureSignal {
   sourceGroup?: QlooSignalGroup
 }
 
+export type ResearchFocus =
+  | "campaign_fingerprint"
+  | "market_context"
+  | "product_context"
+
+export type ResearchAgentAction =
+  | "select_research_inputs"
+  | "query_qloo"
+  | "inspect_evidence"
+  | "refine_research_inputs"
+  | "complete_research"
+  | "resolve_cultural_references"
+  | "query_market_culture"
+  | "query_product_culture"
+  | "compare_brand_and_references"
+  | "request_qloo_heatmap"
+  | "broaden_inputs"
+  | "narrow_inputs"
+  | "stop_research"
+
+export interface ResearchTraceEntry {
+  step: number
+  action: ResearchAgentAction
+  focus: ResearchFocus
+  status: "completed"
+  summary: string
+  decision?: "continue" | "refine" | "stop"
+  inputCounts?: {
+    includesBrand: boolean
+    referenceCount: number
+    tagQueryCount: number
+  }
+  evidence?: {
+    signalCount: number
+    evidenceBearingSignalCount: number
+    affinitySignalCount: number
+    populatedLayerCount: number
+    unresolvedInputCount: number
+  }
+  toolName?: string
+  resultCount?: number
+  evidenceCount?: number
+  nextAction?: string
+  rejectedActions?: string[]
+  rationale?: string
+}
+
+export interface AgentToolTrace {
+  toolName: string
+  action: string
+  decision?: string
+  resultCount?: number
+  evidenceCount?: number
+  nextAction?: string
+  rejectedActions?: string[]
+  rationale?: string
+}
+
 export interface NormalizedCreator {
   provider: "apify"
   providerCreatorId: string
@@ -281,6 +339,28 @@ export interface SafeCultureProfile {
   unresolvedReferences: string[]
   signalCount: number
   searchPlanSource?: "deterministic" | "model"
+  researchTrace?: ResearchTraceEntry[]
+  creatorSearchTrace?: AgentToolTrace[]
+  evidenceCritic?: {
+    decision: "accept" | "refine_qloo" | "refine_creator_search" | "stop_with_caveats"
+    verifiedQlooSignalCount: number
+    representedReferenceCount: number
+    populatedEvidenceLayerCount: number
+    creatorEvidenceCoverage: number
+    caveats: string[]
+    summary: string
+  }
+  agentState?: {
+    objective: string
+    refinementCount: number
+    budgetRemaining: number
+    stopReason?: string
+    pendingApproval?: {
+      action: "broaden_creator_search" | "request_enrichment"
+      reason: string
+      requestedAction?: string
+    }
+  }
 }
 
 export interface SafeCampaign {

@@ -6,9 +6,8 @@ Generic creator discovery can find people with relevant keywords, follower count
 
 CultureMatch uses Qloo's Taste Graph to turn a campaign brief into a market-aware cultural fingerprint, then measures observed creator-content signals against that fingerprint. The result is a ranked, evidence-backed shortlist rather than a keyword-only search result.
 
-> **Live demo:** _Add the deployed public URL before submission._
+> **Live demo:** https://culture-match.vercel.app
 >
-> **Source repository:** _Add the public GitHub, GitLab, or Bitbucket URL before submission._
 
 ## Why Qloo is essential
 
@@ -184,15 +183,6 @@ The test suite covers Qloo request construction and response parsing, Apify norm
 Deploy the Next.js application to a public host, configure the environment variables there, apply Supabase migrations, and register the public Apify webhook URL. Confirm that a new authenticated user can submit a campaign and receive results end to end using non-private credentials and access paths.
 
 `/api/health` is available for deployment health checks. The `/trending` page exposes regional Qloo public-entity momentum as directional cultural context.
-
-## Hackathon submission checklist
-
-- [ ] Add the public demo URL at the top of this README.
-- [ ] Add the public repository URL at the top of this README.
-- [ ] Confirm an end-to-end campaign works in the deployed application.
-- [ ] Add an open-source `LICENSE` file at the repository root and select it in the repository's About section.
-- [ ] Verify no secrets, private URLs, or private access requirements remain.
-
 ## License
 
 An open-source license file must be added before hackathon submission. MIT is a straightforward choice for this project, but the final license should match the repository owner's intent.

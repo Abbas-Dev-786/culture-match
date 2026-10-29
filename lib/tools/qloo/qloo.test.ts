@@ -16,7 +16,7 @@ import {
 const entityFixture = JSON.parse(
   await readFile(
     new URL(
-      "../../phase-0/fixtures/qloo/entity_search-response.json",
+      "../../test-fixtures/qloo/entity_search-response.json",
       import.meta.url
     ),
     "utf8"
@@ -25,7 +25,7 @@ const entityFixture = JSON.parse(
 const tasteFixture = JSON.parse(
   await readFile(
     new URL(
-      "../../phase-0/fixtures/qloo/location_taste-response.json",
+      "../../test-fixtures/qloo/location_taste-response.json",
       import.meta.url
     ),
     "utf8"

@@ -32,7 +32,7 @@
       "low_confidence": false,
       "reasons": [
         "The account centers on baggy and oversized outfit inspiration, but the supplied sources do not establish an India connection or engaged audience.",
-        "Owned source: “Daily outfit Inspiration for baggy/oversized fashion”",
+        "Owned source: â€œDaily outfit Inspiration for baggy/oversized fashionâ€",
         "Potential discovery match; not every condition in the brief is verified by available sources."
       ],
       "evidence": [
@@ -44,7 +44,7 @@
           "evidence_quote": null
         },
         {
-          "text": "Owned source: “Daily outfit Inspiration for baggy/oversized fashion”",
+          "text": "Owned source: â€œDaily outfit Inspiration for baggy/oversized fashionâ€",
           "provenance": "inferred",
           "fact_id": null,
           "source_post_id": null,
@@ -95,8 +95,8 @@
       "low_confidence": false,
       "reasons": [
         "The drops and apparel indicate streetwear relevance, but the sources do not establish an India connection or audience engagement metrics.",
-        "Owned source: “GREY WARM UPS / TUNDRA ZIP UP”",
-        "Owned source: “comment what pieces you're grabbing”",
+        "Owned source: â€œGREY WARM UPS / TUNDRA ZIP UPâ€",
+        "Owned source: â€œcomment what pieces you're grabbingâ€",
         "Potential discovery match; not every condition in the brief is verified by available sources."
       ],
       "evidence": [
@@ -108,14 +108,14 @@
           "evidence_quote": null
         },
         {
-          "text": "Owned source: “GREY WARM UPS / TUNDRA ZIP UP”",
+          "text": "Owned source: â€œGREY WARM UPS / TUNDRA ZIP UPâ€",
           "provenance": "post_evidence",
           "fact_id": "7507efcf-9295-4e22-b3e0-4331fd0f1307",
           "source_post_id": "9618d6bf-9e06-44d1-8f96-56d00652b2fd",
           "evidence_quote": null
         },
         {
-          "text": "Owned source: “comment what pieces you're grabbing”",
+          "text": "Owned source: â€œcomment what pieces you're grabbingâ€",
           "provenance": "post_evidence",
           "fact_id": "7507efcf-9295-4e22-b3e0-4331fd0f1307",
           "source_post_id": "0cdc4657-75a0-49f3-9c6f-46ebf4572dd2",
@@ -166,7 +166,7 @@
       "low_confidence": false,
       "reasons": [
         "The bio explicitly establishes streetwear specialization, but provides no evidence of an Indian location or audience engagement.",
-        "Owned source: “Streetwear & Band Merch Designer”",
+        "Owned source: â€œStreetwear & Band Merch Designerâ€",
         "Potential discovery match; not every condition in the brief is verified by available sources."
       ],
       "evidence": [
@@ -178,7 +178,7 @@
           "evidence_quote": null
         },
         {
-          "text": "Owned source: “Streetwear & Band Merch Designer”",
+          "text": "Owned source: â€œStreetwear & Band Merch Designerâ€",
           "provenance": "inferred",
           "fact_id": null,
           "source_post_id": null,
@@ -229,7 +229,7 @@
       "low_confidence": false,
       "reasons": [
         "The bio explicitly identifies a streetwear creator, but places the brand in NYC rather than India and provides no evidence of audience engagement.",
-        "Owned source: “NYC based Streetwear”",
+        "Owned source: â€œNYC based Streetwearâ€",
         "Potential discovery match; not every condition in the brief is verified by available sources."
       ],
       "evidence": [
@@ -241,7 +241,7 @@
           "evidence_quote": null
         },
         {
-          "text": "Owned source: “NYC based Streetwear”",
+          "text": "Owned source: â€œNYC based Streetwearâ€",
           "provenance": "inferred",
           "fact_id": null,
           "source_post_id": null,
@@ -292,8 +292,8 @@
       "low_confidence": false,
       "reasons": [
         "The menswear and baggy-denim content is relevant to streetwear, but the sources do not establish an India connection or engaged audience.",
-        "Owned source: “colourful garment-dyed 578 baggy fit denim”",
-        "Owned source: “End of the week attire”",
+        "Owned source: â€œcolourful garment-dyed 578 baggy fit denimâ€",
+        "Owned source: â€œEnd of the week attireâ€",
         "Potential discovery match; not every condition in the brief is verified by available sources."
       ],
       "evidence": [
@@ -305,14 +305,14 @@
           "evidence_quote": null
         },
         {
-          "text": "Owned source: “colourful garment-dyed 578 baggy fit denim”",
+          "text": "Owned source: â€œcolourful garment-dyed 578 baggy fit denimâ€",
           "provenance": "post_evidence",
           "fact_id": "ee9e8500-a92c-4ec1-aa69-480689af3b85",
           "source_post_id": "2d19f30d-583d-481c-8894-00cad711b56b",
           "evidence_quote": null
         },
         {
-          "text": "Owned source: “End of the week attire”",
+          "text": "Owned source: â€œEnd of the week attireâ€",
           "provenance": "post_evidence",
           "fact_id": "ee9e8500-a92c-4ec1-aa69-480689af3b85",
           "source_post_id": "0e1918df-ac7d-4dbd-b7ee-ec735caf2f9b",
@@ -331,3 +331,5 @@
     "location_unverified": true
   }
 ]
+
+

@@ -33,7 +33,7 @@ The repository now implements the core plan:
 - Results-page cards for the fingerprint and measured Qloo contribution.
 - Canonical Supabase migrations under `supabase/migrations` and contract coverage for the application schema.
 
-Before the hackathon demo, configure the active Qloo endpoints, run one live campaign with `node --experimental-strip-types --env-file=.env.local lib/phase-0/run-spike.mts`, capture a successful fixture, and confirm that at least one creator has a resolved content signal with a non-zero affinity. The implementation intentionally keeps unresolved or unavailable signals visible instead of fabricating a match.
+Before the hackathon demo, configure the active Qloo endpoints and run one authenticated campaign through the application. Confirm that at least one creator has a resolved content signal with a non-zero affinity. The implementation intentionally keeps unresolved or unavailable signals visible instead of fabricating a match.
 
 ## 2. Current limitation
 

@@ -10,8 +10,7 @@
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test",
-    "phase0:spike": "node --experimental-strip-types --env-file=.env.local lib/phase-0/run-spike.mts"
+    "test": "node --experimental-strip-types --test"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

@@ -16,7 +16,7 @@ Create:
 - `lib/matching/normalize-culture.ts`
 - `lib/validation/provider-payloads.ts` extensions for observed fields.
 
-Run the normalizers against the Phase 0 fixtures before using live results. Every normalized field must have a source path or be explicitly derived.
+Run the normalizers against the sanitized provider fixtures before using live results. Every normalized field must have a source path or be explicitly derived.
 
 ### P3-02 — Implement evidence construction
 

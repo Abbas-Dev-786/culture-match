@@ -74,8 +74,8 @@ The first public demonstration should use one India-focused market. The implemen
 
 | Phase | Name | Depends on | Exit gate |
 |---|---|---|---|
-| 0 | Feasibility spike and decisions | None | One real Qloo result and one real Apify result are captured and mapped without fabricated fields. |
-| 1 | Foundation and secure persistence | Phase 0 decisions | App shell, migrations, RLS, domain contracts, and workflow skeleton pass tests. |
+| 0 | Provider validation and decisions | None | Provider contracts are reviewed and sanitized Qloo/Apify fixtures are available without fabricated fields. |
+| 1 | Foundation and secure persistence | Provider contracts | App shell, migrations, RLS, domain contracts, and workflow skeleton pass tests. |
 | 2 | Provider adapters and analysis workflow | Phases 0–1 | A campaign can execute Qloo and Apify asynchronously with persisted status and safe retries. |
 | 3 | Matching, evidence, and agent outputs | Phase 2 fixtures and normalized data | Results are deterministically scored, explainable, and comparable across broad discovery, optional refinement and ablation. |
 | 4 | Product experience and export | Phase 3 contracts | A tester can submit a campaign and understand the first recommendations without developer help. |
@@ -83,7 +83,6 @@ The first public demonstration should use one India-focused market. The implemen
 
 Detailed instructions are in:
 
-- [`phase-0-feasibility-spike.md`](phase-0-feasibility-spike.md)
 - [`phase-1-foundation.md`](phase-1-foundation.md)
 - [`phase-2-provider-workflow.md`](phase-2-provider-workflow.md)
 - [`phase-3-matching-evidence.md`](phase-3-matching-evidence.md)
@@ -123,7 +122,7 @@ Keep each provider behind a single adapter. UI components must consume applicati
 
 | Phase | Build artifacts that must exist before handoff |
 |---|---|
-| 0 | Decision log, validated market config, sanitized Qloo/Apify fixtures, provider field matrix |
+| 0 | Reviewed provider contracts and sanitized Qloo/Apify fixtures |
 | 1 | Project bootstrap, domain schemas, migrations, RLS/policies, state machine, API skeleton |
 | 2 | Qloo client, Apify client, workflow runner, retries, idempotency, status/retry endpoints |
 | 3 | Normalizers, evidence builder, scoring engine, broad/refinement comparison, report schemas |
@@ -167,6 +166,6 @@ A phase is complete only when its code, tests, fixtures, documentation, and acce
 
 ## 11. Delivery priorities under time pressure
 
-Protect Phase 0, provider adapters, broad discovery, Qloo enrichment, evidence display, bounded agent loops, and the end-to-end demo path. Cut PDF export, bookmarks, multi-market comparison, and cosmetic dashboard work before cutting validation, provenance, retries, or security.
+Protect provider validation, provider adapters, broad discovery, Qloo enrichment, evidence display, bounded agent loops, and the end-to-end demo path. Cut PDF export, bookmarks, multi-market comparison, and cosmetic dashboard work before cutting validation, provenance, retries, or security.
 
 The missing `architecture.png` and `sequence.png` files referenced by the TDD should be added during documentation hardening or the references should be removed before the repository is published.

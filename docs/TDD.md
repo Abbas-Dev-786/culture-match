@@ -404,7 +404,7 @@ lib/
   supabase/server.ts
   supabase/client.ts
   domain/types.ts
-  phase-0/
+  test-fixtures/
   matching/*.test.ts
   workflow/*.test.ts
 lib/db/migrations/
@@ -528,15 +528,15 @@ Run the current suite with `pnpm test`; it executes `node --experimental-strip-t
 
 ## 17. Implementation status and remaining work
 
-### Phase 0 — API feasibility spike — complete
+### Provider validation and test fixtures — complete
 
-- Verify Qloo key and base URL.
-- Test entity search and one location/tag Insights query in the live docs/API.
-- Run Influship actor with 5–10 results; inspect input/output schema and actual item JSON.
-- Record a minimal set of fixtures and decide which match components can genuinely be scored.
-- Decide the first campaign category and market based on returned data.
+- Verify Qloo key and base URL during deployment setup.
+- Test entity search and location/tag Insights requests against the active API.
+- Validate the configured Apify actor input/output contract before deployment.
+- Keep sanitized provider fixtures in `lib/test-fixtures/` for adapter tests.
+- Score only components supported by observed provider fields.
 
-**Exit gate:** adapter fixtures, provider contracts and environment-driven spike tooling are in place; live credential validation remains deployment-specific.
+**Exit gate:** adapter fixtures and provider contracts are covered by tests; live credential validation remains deployment-specific.
 
 ### Phase 1 — Thin vertical slice — complete
 

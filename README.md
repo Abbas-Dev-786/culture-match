@@ -22,7 +22,7 @@ Install dependencies with pnpm, then copy the environment template into the proj
 
 ```bash
 pnpm install
-copy lib\\phase-0\\env.example .env.local
+copy lib\\env.example .env.local
 ```
 
 Configure Supabase, Qloo, and Apify server credentials in `.env.local`. OpenRouter is optional; when its credentials are present, the system uses it for validated search planning, bounded refinement decisions and evidence-grounded reports. Without model credentials, deterministic fallbacks keep the workflow fully operational.

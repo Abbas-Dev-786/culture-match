@@ -2,7 +2,7 @@
 
 **Purpose:** Establish the application skeleton, domain contracts, database, security boundaries, and workflow state machine.
 
-**Depends on:** Phase 0 decisions and fixtures
+**Depends on:** Validated provider contracts and test fixtures
 
 **Exit condition:** The application can create and retrieve a campaign/run record, validate inputs, enforce legal state transitions, and pass database/security tests.
 
@@ -214,4 +214,4 @@ The UI only needs to prove routing, campaign creation, and status retrieval in t
 - [ ] Status survives a page refresh.
 - [ ] Invalid transitions are blocked.
 - [ ] RLS and secret boundaries are tested.
-- [ ] Fixtures and Phase 0 decisions are accessible to the application.
+- [ ] Provider fixtures and validated contracts are accessible to the application.

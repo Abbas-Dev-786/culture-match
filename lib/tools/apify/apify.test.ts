@@ -8,19 +8,19 @@ import { ProviderError } from "../provider-errors.ts"
 
 const startFixture = JSON.parse(
   await readFile(
-    new URL("../../phase-0/fixtures/apify/run-start.json", import.meta.url),
+    new URL("../../test-fixtures/apify/run-start.json", import.meta.url),
     "utf8"
   )
 ) as unknown
 const terminalFixture = JSON.parse(
   await readFile(
-    new URL("../../phase-0/fixtures/apify/run-terminal.json", import.meta.url),
+    new URL("../../test-fixtures/apify/run-terminal.json", import.meta.url),
     "utf8"
   )
 ) as unknown
 const datasetFixture = JSON.parse(
   await readFile(
-    new URL("../../phase-0/fixtures/apify/dataset-items.json", import.meta.url),
+    new URL("../../test-fixtures/apify/dataset-items.json", import.meta.url),
     "utf8"
   )
 ) as unknown[]

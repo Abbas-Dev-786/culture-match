@@ -39,7 +39,7 @@ Create `lib/workflow/retry.ts` and a provider error classifier. Add per-provider
 
 ### P2-05 — Add search-plan generation and fallback
 
-Create the search-plan schema and model wrapper. Validate every generated filter against the Phase 0 actor field matrix. Add a deterministic fallback query that works without the model.
+Create the search-plan schema and model wrapper. Validate every generated filter against the reviewed actor contract. Add a deterministic fallback query that works without the model.
 
 ### P2-06 — Connect status and recovery
 
@@ -89,7 +89,7 @@ Adapter rules:
 
 - Start the actor only from the workflow, never from a browser poll.
 - Persist actor run ID and dataset ID immediately after start.
-- Use the actor schema discovered in Phase 0.
+- Use the reviewed actor input and output contract.
 - Apply the server-enforced candidate limit and cost guard.
 - Treat `SUCCEEDED`, `FAILED`, `ABORTED`, `TIMED-OUT`, and running states explicitly.
 - Read dataset items only after successful completion.

@@ -56,7 +56,7 @@
 
 ## Supabase access mode
 
-- Phase 0 decision: authenticated demonstration using the existing Supabase middleware.
+- Phase 0 decision: authenticated demonstration using the server-side Supabase clients and route-level authentication helpers.
 - Ownership field: `campaigns.user_id`, with owner-scoped policies based on `auth.uid()`.
 - Provider calls and campaign writes remain server-side.
 - Every exposed table must use RLS; authenticated users may access only their own campaign rows and related records.

@@ -95,12 +95,6 @@ export interface QlooClient {
   getInsights(input: QlooInsightsInput): Promise<unknown>
   compareInsights(input: QlooComparisonInput): Promise<unknown>
   getHeatmap(input: QlooHeatmapInput): Promise<unknown>
-  getTrending(input: {
-    filterType: string
-    locationQuery?: string
-    page?: number
-    take: number
-  }): Promise<unknown>
   getLocationTaste(input: {
     locationQuery: string
     filterType: "urn:tag"
@@ -115,7 +109,6 @@ interface QlooClientOptions {
   insightsUrl?: string
   compareUrl?: string
   tagsUrl?: string
-  trendsUrl?: string
   apiKey?: string
   fetchImpl?: JsonFetcher
   timeoutMs?: number
@@ -125,7 +118,6 @@ interface QlooClientOptions {
 const DEFAULT_TIMEOUT_MS = 20_000
 const QLOO_TAG_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1_000
 const QLOO_INSIGHTS_CACHE_TTL_MS = 24 * 60 * 60 * 1_000
-const QLOO_TRENDS_CACHE_TTL_MS = 60 * 60 * 1_000
 type QlooCache = Map<string, { expiresAt: number; value: unknown }>
 
 export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
@@ -273,26 +265,6 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
         options.onRequest
       )
     },
-    async getTrending(input) {
-      const url = new URL(config.trendsUrl)
-      url.searchParams.set("filter.type", input.filterType)
-      if (input.locationQuery)
-        url.searchParams.set("filter.location.query", input.locationQuery)
-      url.searchParams.set("page", String(input.page ?? 1))
-      url.searchParams.set("take", String(input.take))
-      return requestProviderJson(
-        fetchImpl,
-        url,
-        config.apiKey,
-        config.timeoutMs,
-        "qloo",
-        z.unknown(),
-        {},
-        QLOO_TRENDS_CACHE_TTL_MS,
-        cache,
-        options.onRequest
-      )
-    },
     async getLocationTaste(input) {
       if (input.filterType !== "urn:tag") {
         throw new ProviderError({
@@ -335,7 +307,6 @@ function readQlooConfig(options: QlooClientOptions): {
   insightsUrl: string
   compareUrl: string
   tagsUrl: string
-  trendsUrl: string
   apiKey: string
   timeoutMs: number
 } {
@@ -344,7 +315,6 @@ function readQlooConfig(options: QlooClientOptions): {
   const insightsUrl = options.insightsUrl ?? process.env.QLOO_INSIGHTS_URL
   const compareUrl = options.compareUrl ?? process.env.QLOO_COMPARE_URL
   const tagsUrl = options.tagsUrl ?? process.env.QLOO_TAGS_URL
-  const trendsUrl = options.trendsUrl ?? process.env.QLOO_TRENDS_URL
   const apiKey = options.apiKey ?? process.env.QLOO_API_KEY
 
   if (!baseUrl || !searchUrl || !insightsUrl || !apiKey) {
@@ -367,17 +337,11 @@ function readQlooConfig(options: QlooClientOptions): {
     tagsUrl ?? new URL("/v2/tags", parsedBase).toString(),
     "Qloo tags URL"
   )
-  const parsedTrends = parseProviderUrl(
-    trendsUrl ?? new URL("/v2/trending", parsedBase).toString(),
-    "Qloo trends URL"
-  )
-
   if (
     parsedSearch.origin !== parsedBase.origin ||
     parsedInsights.origin !== parsedBase.origin ||
     parsedCompare.origin !== parsedBase.origin ||
-    parsedTags.origin !== parsedBase.origin ||
-    parsedTrends.origin !== parsedBase.origin
+    parsedTags.origin !== parsedBase.origin
   ) {
     throw new ProviderError({
       provider: "qloo",
@@ -393,7 +357,6 @@ function readQlooConfig(options: QlooClientOptions): {
     insightsUrl: parsedInsights.toString(),
     compareUrl: parsedCompare.toString(),
     tagsUrl: parsedTags.toString(),
-    trendsUrl: parsedTrends.toString(),
     apiKey,
     timeoutMs: readPositiveInteger(
       options.timeoutMs ?? Number(process.env.QLOO_TIMEOUT_MS),

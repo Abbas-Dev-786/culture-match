@@ -48,6 +48,54 @@ Apify creator discovery
 Deterministic scoring, Qloo ablation, and an explainable shortlist
 ```
 
+### End-to-end workflow
+
+```mermaid
+flowchart LR
+    A[Campaign brief] --> B[Qloo: resolve entities and tags]
+    M[Target market] --> C[Qloo: market-conditioned Taste Graph research]
+    B --> D[Campaign cultural fingerprint]
+    C --> D
+    A --> E[Apify: broad creator discovery]
+    E --> F[Observed creator bio and content]
+    F --> G[Qloo: resolve creator-content signals]
+    D --> H[Qloo: campaign x market x creator affinity]
+    G --> H
+    H --> I[Deterministic evidence-backed scoring]
+    I --> J[Explainable creator shortlist]
+```
+
+### The Qloo matching model
+
+```mermaid
+flowchart TB
+    subgraph Campaign context
+        P[Product, category, and campaign description]
+        R[Cultural references]
+        L[Market and optional audience conditioning]
+    end
+
+    P --> Q1[Qloo entity and tag resolution]
+    R --> Q1
+    L --> Q2[Qloo regional Taste Graph signals]
+    Q1 --> FP[Weighted campaign fingerprint]
+    Q2 --> FP
+
+    subgraph Creator evidence
+        C1[Observed posts, captions, bio, and profile data]
+        C2[Provider-reported engagement and reach fields]
+    end
+
+    C1 --> Q3[Qloo creator-content signal resolution]
+    FP --> MATCH[Market-conditioned cultural affinity]
+    Q3 --> MATCH
+    MATCH --> SCORE[35% cultural-affinity score component]
+    C2 --> SCORE
+    SCORE --> RESULT[Rank, evidence, caveats, and Qloo ablation]
+```
+
+The key control is the `MATCH` step. CultureMatch does not score a creator merely because their content is popular in a market. It requires resolved creator-content signals to connect to resolved campaign signals, then conditions that relationship on the selected market.
+
 1. A marketer submits a campaign brief with a target market, audience constraints, product/category context, and cultural references.
 2. Qloo resolves the input into entities and tags, then retrieves market-conditioned cultural signals to create a campaign fingerprint.
 3. The application runs a broad creator search through the configured Apify influencer actor.
@@ -76,6 +124,57 @@ CultureMatch uses agents where judgment is useful, while keeping external effect
 | Person-level fallback | Validates an exact Qloo person entity when content evidence is unavailable | Keeps weaker profile-level evidence clearly distinct from content evidence. |
 | Qloo ablation | Re-scores the same candidates without cultural affinity | Makes Qloo's effect on ranking inspectable. |
 | Cultural exploration | Supports entity comparison, signal heatmaps, and regional trending public figures | Helps marketers understand the surrounding cultural context. |
+
+### What Qloo changes in the ranking
+
+```mermaid
+flowchart LR
+    A[Same creator candidates] --> B[Baseline score]
+    B --> B1[Engagement, semantic relevance, momentum, consistency, budget tier]
+
+    A --> C[CultureMatch score]
+    D[Qloo campaign fingerprint] --> E[Qloo creator-content resonance]
+    F[Target market] --> E
+    C --> B1
+    E --> C
+
+    B1 --> G[Baseline ranking]
+    C --> H[Qloo-conditioned ranking]
+    G --> I[Qloo ablation comparison]
+    H --> I
+```
+
+The application scores the same normalized candidates twice: once with cultural affinity and once without it. The result view exposes rank changes and score deltas, so Qloo's contribution is inspectable rather than asserted.
+
+### Bounded agent and tool orchestration
+
+```mermaid
+sequenceDiagram
+    participant U as Marketer
+    participant W as Workflow
+    participant A as Research/Critic agents
+    participant Q as Qloo
+    participant P as Apify
+
+    U->>W: Submit campaign brief
+    W->>A: Request validated research action
+    A->>Q: Resolve campaign and market signals
+    Q-->>A: Cultural fingerprint evidence
+    W->>P: Run broad creator discovery
+    P-->>W: Candidate profiles and observed fields
+    W->>Q: Match creator-content signals to fingerprint
+    Q-->>W: Affinity evidence or explicit unavailability
+    W->>A: Assess evidence sufficiency
+    alt Refinement is justified and budget remains
+        A->>W: Authorize one constrained refinement
+        W->>P: Run one refined discovery search
+    else Evidence is sufficient or budget is exhausted
+        A-->>W: Continue without another search
+    end
+    W-->>U: Deterministic ranked results with evidence and caveats
+```
+
+Agents can choose only validated actions, operate within action/provider/model budgets, and never silently replace the deterministic ranking logic.
 
 ## Product capabilities
 

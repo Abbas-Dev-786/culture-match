@@ -419,7 +419,7 @@ function setInsightsParams(url: URL, input: QlooInsightsInput): void {
   if (input.biasTrends) url.searchParams.set("bias.trends", input.biasTrends)
   if (input.popularityMin !== undefined)
     url.searchParams.set("filter.popularity.min", String(input.popularityMin))
-  if (input.locationQuery && input.filterType !== "urn:entity:person")
+  if (input.locationQuery)
     url.searchParams.set("signal.location.query", input.locationQuery)
   if (input.locationId)
     url.searchParams.set("signal.location", input.locationId)
@@ -512,7 +512,7 @@ function buildInsightsBody(input: QlooInsightsInput): Record<string, unknown> {
   if (input.biasTrends) body["bias.trends"] = input.biasTrends
   if (input.popularityMin !== undefined)
     body["filter.popularity.min"] = input.popularityMin
-  if (input.locationQuery && input.filterType !== "urn:entity:person")
+  if (input.locationQuery)
     body["signal.location.query"] = input.locationQuery
   if (input.locationId) body["signal.location"] = input.locationId
   if (input.entitySignals && input.entitySignals.length > 0)

@@ -8,7 +8,10 @@ import { resolveEntities } from "./resolve-entities.ts"
 import { expandTagQueries, resolveTags } from "./resolve-tags.ts"
 import type { CampaignBrief } from "../../domain/types.ts"
 import { ProviderError } from "../provider-errors.ts"
-import { parseTrendingEntities } from "./trending.ts"
+import {
+  getTrendingPublicFigures,
+  parseTrendingEntities,
+} from "./trending.ts"
 
 const entityFixture = JSON.parse(
   await readFile(
@@ -566,7 +569,7 @@ test("Qloo validates creators from the documented person insight response", asyn
   )
   assert.equal(personRequestBody?.["bias.trends"], "high")
   assert.equal(personRequestBody?.["signal.demographics.age"], undefined)
-  assert.equal(personRequestBody?.["signal.location.query"], undefined)
+  assert.equal(personRequestBody?.["signal.location.query"], "Berlin")
   assert.equal(personRequestUrl?.searchParams.has("filter.type"), false)
   assert.equal(personRequestBody?.["filter.type"], "urn:entity:person")
   assert.equal(personRequestBody?.["filter.tags"], undefined)
@@ -790,6 +793,49 @@ test("Qloo parses trending public-entity metrics without inventing social fields
       popularity: 0.61,
     },
   ])
+})
+
+test("Qloo loads trend-biased public figures with regional conditioning", async () => {
+  let requestUrl: URL | undefined
+  const client = createQlooClient({
+    baseUrl: "https://qloo.test",
+    searchUrl: "https://qloo.test/search",
+    insightsUrl: "https://qloo.test/v2/insights",
+    apiKey: "test-key",
+    fetchImpl: async (input) => {
+      requestUrl = new URL(input)
+      return new Response(
+        JSON.stringify({
+          success: true,
+          results: {
+            entities: [
+              {
+                entity_id: "person-1",
+                name: "Public Figure",
+                subtype: "urn:entity:person",
+                popularity: 0.61,
+                query: {
+                  affinity: 0.74,
+                  measurements: { audience_growth: 0.82 },
+                },
+              },
+            ],
+          },
+        }),
+        { status: 200 },
+      )
+    },
+  })
+
+  const entities = await getTrendingPublicFigures(client, 20, "Berlin")
+
+  assert.equal(entities[0]?.trendScore, 0.82)
+  assert.deepEqual(entities[0]?.types, ["urn:entity:person"])
+  assert.equal(requestUrl?.pathname, "/v2/insights")
+  assert.equal(requestUrl?.searchParams.get("filter.type"), "urn:entity:person")
+  assert.equal(requestUrl?.searchParams.get("bias.trends"), "high")
+  assert.equal(requestUrl?.searchParams.get("filter.popularity.min"), "0.01")
+  assert.equal(requestUrl?.searchParams.get("signal.location.query"), "Berlin")
 })
 
 test("Qloo classifies rate limits, schema mismatches, and empty signals", async () => {

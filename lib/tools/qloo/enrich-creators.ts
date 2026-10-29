@@ -213,6 +213,7 @@ async function discoverPersonMatches(
         filterType: "urn:entity:person",
         requestMethod: "POST",
         filterResultsEntitiesQuery: creator.name,
+        locationQuery,
         entitySignals: campaignSignals
           .filter((signal) => signal.kind === "entity")
           .slice(0, 10)

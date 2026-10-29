@@ -1,5 +1,6 @@
 import { ZodError } from "zod"
 import { ApplicationError, isApplicationError } from "@/lib/errors"
+import { isProviderError, safeProviderError } from "@/lib/tools/provider-errors"
 
 export function errorResponse(error: unknown): Response {
   if (error instanceof ZodError) {
@@ -22,6 +23,13 @@ export function errorResponse(error: unknown): Response {
     return Response.json(
       { error: { code: error.code, message: error.message } },
       { status: error.status },
+    )
+  }
+
+  if (isProviderError(error)) {
+    return Response.json(
+      { error: safeProviderError(error) },
+      { status: error.status ?? 502 },
     )
   }
 

@@ -6,9 +6,11 @@ export async function getTrendingPublicFigures(
   take = 20,
   locationQuery?: string
 ): Promise<TrendingEntity[]> {
-  const payload = await client.getTrending({
+  const payload = await client.getInsights({
     filterType: "urn:entity:person",
     ...(locationQuery ? { locationQuery } : {}),
+    biasTrends: "high",
+    popularityMin: 0.01,
     take,
   })
   return parseTrendingEntities(payload).slice(0, take)
@@ -20,12 +22,23 @@ export function parseTrendingEntities(payload: unknown): TrendingEntity[] {
     if (!isRecord(value)) return []
     const entityId = readString(value.entity_id) ?? readString(value.id)
     const name = readString(value.name) ?? readString(value.entity_name)
+    const subtype = readString(value.subtype)
     const types = readStringArray(value.types)
+      .concat(subtype ? [subtype] : [])
+      .filter((type, index, values) => values.indexOf(type) === index)
     if (!entityId || !name) return []
     const query = isRecord(value.query) ? value.query : value
     const affinity = readNumber(value.affinity) ?? readNumber(query.affinity)
     const popularity = readNumber(value.popularity) ?? readNumber(query.popularity)
-    const trendScore = readNumber(value.trending) ?? readNumber(query.trending)
+    const measurements = isRecord(query.measurements)
+      ? query.measurements
+      : undefined
+    const trendScore =
+      readNumber(value.trending) ??
+      readNumber(query.trending) ??
+      (measurements
+        ? readNumber(measurements.audience_growth)
+        : undefined)
     return [{
       entityId,
       name,
@@ -43,6 +56,7 @@ function readValues(payload: unknown): unknown[] {
   if (isRecord(payload.results)) {
     if (Array.isArray(payload.results.entities)) return payload.results.entities
     if (Array.isArray(payload.results.people)) return payload.results.people
+    if (Array.isArray(payload.results.trending)) return payload.results.trending
   }
   if (Array.isArray(payload.data)) return payload.data
   return []

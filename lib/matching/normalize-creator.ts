@@ -67,9 +67,36 @@ export function normalizeStoredCreator(
     contentSignals: readContentSignals(payload.contentSignals),
     qlooSignals: readQlooSignals(payload.qlooSignals),
     qlooPersonSignals: readQlooSignals(payload.qlooPersonSignals),
+    ...(readQlooComparison(payload.qlooCampaignComparison)
+      ? { qlooCampaignComparison: readQlooComparison(payload.qlooCampaignComparison) }
+      : {}),
     missingFields: readStringArray(payload.missingFields),
     sourceFields: isJsonObject(payload.sourceFields) ? payload.sourceFields : {},
     evidence,
+  }
+}
+
+function readQlooComparison(value: Json | undefined) {
+  if (
+    !isJsonObject(value) ||
+    typeof value.groupA !== "string" ||
+    typeof value.groupB !== "string" ||
+    typeof value.resultCount !== "number" ||
+    !Array.isArray(value.topResults)
+  ) return undefined
+  return {
+    groupA: value.groupA,
+    groupB: value.groupB,
+    resultCount: value.resultCount,
+    topResults: value.topResults.flatMap((item) => {
+      if (!isJsonObject(item) || typeof item.signalId !== "string" || !Array.isArray(item.types)) return []
+      return [{
+        signalId: item.signalId,
+        ...(typeof item.name === "string" ? { name: item.name } : {}),
+        types: item.types.filter(isString),
+        ...(typeof item.affinity === "number" ? { affinity: item.affinity } : {}),
+      }]
+    }),
   }
 }
 
@@ -120,6 +147,9 @@ function readQlooSignals(value: Json | undefined): QlooSignalRecord[] {
           : {}),
         ...(typeof item.inputWeight === "number"
           ? { inputWeight: item.inputWeight }
+          : {}),
+        ...(Array.isArray(item.campaignSignalIds)
+          ? { campaignSignalIds: item.campaignSignalIds.filter(isString) }
           : {}),
         sourceGroup: item.sourceGroup,
         evidence: readEvidenceItem(item.evidence),

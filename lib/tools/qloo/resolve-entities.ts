@@ -1,7 +1,6 @@
 import type { CultureSignal, EvidenceRef } from "../../domain/types.ts"
 import { ProviderError } from "../provider-errors.ts"
 import type { QlooClient } from "./client.ts"
-import { TAG_SEARCH_TYPES } from "./query-config.ts"
 import { parseTagCandidates } from "./resolve-tags.ts"
 
 export interface EntityTagFallback {
@@ -147,7 +146,6 @@ async function resolveTagFallback(
   try {
     const payload = await client.searchTags({
       query: reference,
-      tagTypes: TAG_SEARCH_TYPES,
       take: 5,
     })
     const candidates = parseTagCandidates(payload)

@@ -181,7 +181,7 @@ The migration should remove deterministic business decisions in phases:
 
 ### Phase 1: Production decision policy
 
-- Require `ENABLE_AGENTIC_DECISIONS=true` in deployments that claim autonomous operation.
+- Use the configured model automatically in deployments with model credentials; retain deterministic fallback behavior for development and provider-outage recovery.
 - Fail clearly or show an explicit fallback status when the configured decision model is unavailable.
 - Keep deterministic fallback behavior available for development and provider-outage recovery.
 

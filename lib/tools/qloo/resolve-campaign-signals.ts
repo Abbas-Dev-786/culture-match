@@ -5,6 +5,7 @@ import type {
 } from "../../domain/types.ts"
 import { ProviderError } from "../provider-errors.ts"
 import type { QlooClient } from "./client.ts"
+import { CULTURAL_REFERENCE_ENTITY_TYPES } from "./query-config.ts"
 import { resolveEntities, type ResolvedEntity } from "./resolve-entities.ts"
 import {
   expandTagQueries,
@@ -37,11 +38,26 @@ export async function resolveCampaignSignals(
         ...selection.references,
       ]
     : [brief.brandName, ...brief.culturalReferences]
-  const resolvedReferences = await resolveEntities(
-    [...new Set(referenceInputs)],
-    client,
-    observedAt
+  const uniqueReferenceInputs = [...new Set(referenceInputs)]
+  const brandReferences = uniqueReferenceInputs.filter(
+    (reference) => reference === brief.brandName
   )
+  const culturalReferences = uniqueReferenceInputs.filter(
+    (reference) => reference !== brief.brandName
+  )
+  const resolvedReferences = [
+    ...(brandReferences.length > 0
+      ? await resolveEntities(brandReferences, client, observedAt, "urn:entity:brand")
+      : []),
+    ...(culturalReferences.length > 0
+      ? await resolveEntities(
+          culturalReferences,
+          client,
+          observedAt,
+          CULTURAL_REFERENCE_ENTITY_TYPES
+        )
+      : []),
+  ]
   const resolvedReferenceNames = new Set(
     resolvedReferences
       .filter((reference) => reference.status === "resolved")

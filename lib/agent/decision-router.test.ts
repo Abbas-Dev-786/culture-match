@@ -31,7 +31,6 @@ test("evidence acceptance suppresses an unnecessary creator refinement", () => {
     assessment,
     refinementCount: 0,
     maxRefinements: 1,
-    refinementEnabled: true,
     targetedEnrichmentCount: 0,
   })
 
@@ -46,7 +45,6 @@ test("creator critic enables one bounded refinement", () => {
     assessment,
     refinementCount: 0,
     maxRefinements: 1,
-    refinementEnabled: true,
     targetedEnrichmentCount: 0,
   })
 
@@ -64,7 +62,6 @@ test("approved proposals resume the exact action and signal set", () => {
     approvedPlan: { ...({ query: "streetwear", platforms: ["instagram"], maxResults: 5 } as const), variant: "culture_informed" },
     refinementCount: 0,
     maxRefinements: 1,
-    refinementEnabled: true,
     targetedEnrichmentCount: 0,
   })
 
@@ -84,7 +81,6 @@ test("sparse evidence can request one targeted enrichment pass", () => {
     assessment: { ...assessment, action: "request_enrichment", decision: "request_enrichment" },
     refinementCount: 0,
     maxRefinements: 1,
-    refinementEnabled: true,
     targetedEnrichmentCount: 0,
   })
 

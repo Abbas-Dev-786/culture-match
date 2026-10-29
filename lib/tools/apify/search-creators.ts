@@ -159,7 +159,6 @@ function normalizeCreator(
     contentSignals.length === 0 ? "contentSignals" : undefined,
     audienceRegions.length === 0 ? "audienceLocations" : undefined,
     languages.length === 0 ? "languages" : undefined,
-    "fees",
   ].filter((field): field is string => field !== undefined)
 
   if (bio) evidence.push(fieldEvidence("$.creator.bio", observedAt, bio))

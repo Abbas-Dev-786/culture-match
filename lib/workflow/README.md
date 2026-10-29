@@ -12,7 +12,7 @@
 
 `GET /api/campaigns/:id/status` only reads persisted state. In development, `POST /api/campaigns/:id/advance` advances one bounded step so a local process can recover a run without exposing provider calls to the browser. In production, Apify sends terminal run events to `POST /api/internal/apify/webhook`; the route authenticates the request, finds the persisted provider run, and advances exactly one workflow step. Duplicate webhook deliveries are safe because the workflow and database transitions are guarded.
 
-Broad discovery is the default. Optional agent-selected refinement is enabled with `ENABLE_AGENTIC_CREATOR_REFINEMENT=true`; it is limited to one additional search and must preserve campaign constraints. Result counts, Apify run timeout, maximum charge, retry elapsed time, and total analysis runtime are server-enforced.
+The creator-search agent always evaluates whether one bounded Qloo-guided refinement is justified; it must preserve campaign constraints. Refinement actions require the existing in-product approval step. Result counts, Apify run timeout, maximum charge, retry elapsed time, and total analysis runtime are server-enforced.
 
 Provider secrets are read only in server modules. Raw provider payloads are not retained unless `PROVIDER_RETAIN_RAW=true`; retained payloads receive a short expiry timestamp.
 

@@ -3,6 +3,7 @@ import type {
   NormalizedCreator,
   QlooAgeRange,
   QlooGender,
+  QlooComparisonSummary,
   QlooSignalRecord,
 } from "../../domain/types.ts"
 import type { QlooClient } from "./client.ts"
@@ -19,6 +20,8 @@ export interface QlooCreatorConditioning {
 export interface QlooCreatorEnrichmentOptions {
   creatorIds?: string[]
   maxCreators?: number
+  concurrency?: number
+  onProgress?: (creator: NormalizedCreator) => Promise<void> | void
 }
 
 export async function enrichCreatorsWithQloo(
@@ -30,8 +33,8 @@ export async function enrichCreatorsWithQloo(
   options: QlooCreatorEnrichmentOptions = {}
 ): Promise<NormalizedCreator[]> {
   const limit = Math.min(
-    options.maxCreators ?? readCreatorLimit(),
-    readCreatorLimit()
+    options.maxCreators ?? creators.length,
+    200
   )
   const targetIds = options.creatorIds
     ? new Set(options.creatorIds)
@@ -44,17 +47,24 @@ export async function enrichCreatorsWithQloo(
   )
   const enriched = new Map<string, NormalizedCreator>()
   const cache = new Map<string, QlooSignalRecord[]>()
+  const concurrency = Math.max(1, Math.min(options.concurrency ?? 6, 12))
+  const reportProgress = async (creatorId: string): Promise<void> => {
+    const completed = enriched.get(creatorId)
+    if (completed) await options.onProgress?.(completed)
+  }
   const personMatches = await discoverPersonMatches(
     targetCreators.slice(0, limit),
+    locationQuery,
     campaignSignals,
     conditioning,
-    client
+    client,
+    concurrency
   )
 
-  for (const creator of creators) {
+  await mapWithConcurrency(creators, concurrency, async (creator) => {
     if (!eligibleIds.has(creator.providerCreatorId)) {
       enriched.set(creator.providerCreatorId, creator)
-      continue
+      return
     }
     const postContentSignals = creator.contentSignals.filter(
       (signal) => signal.evidenceKind !== "bio" && signal.sourceField !== "$.creator.bio"
@@ -64,7 +74,8 @@ export async function enrichCreatorsWithQloo(
         creator.providerCreatorId,
         applyPersonMatch(creator, personMatches)
       )
-      continue
+      await reportProgress(creator.providerCreatorId)
+      return
     }
 
     const cacheKey = postContentSignals
@@ -76,7 +87,8 @@ export async function enrichCreatorsWithQloo(
         creator.providerCreatorId,
         applyPersonMatch({ ...creator, qlooSignals: cached }, personMatches)
       )
-      continue
+      await reportProgress(creator.providerCreatorId)
+      return
     }
 
     try {
@@ -103,14 +115,34 @@ export async function enrichCreatorsWithQloo(
           creator.providerCreatorId,
           applyPersonMatch(creator, personMatches)
         )
-        continue
+        await reportProgress(creator.providerCreatorId)
+        return
       }
 
+      const campaignTagSignals = buildCampaignTagSignals(campaignSignals)
+      const campaignEntitySignals = campaignSignals
+        .filter((signal) => signal.kind === "entity")
+        .slice(0, 12)
+        .map((signal) => ({
+          id: signal.signalId,
+          weight: signal.inputWeight ?? 20,
+        }))
+      const campaignSignalIds = campaignSignals
+        .filter((signal) => signal.sourceGroup !== "creator")
+        .map((signal) => signal.signalId)
       const payload = await client.getInsights({
         filterType: "urn:tag",
         locationQuery,
         tagTypes: CULTURAL_TAG_TYPES,
-        tagSignals: resolvedTags.map(({ tag, weight }) => ({ tag, weight })),
+        ...(campaignEntitySignals.length > 0
+          ? { entitySignals: campaignEntitySignals }
+          : {}),
+        tagSignals:
+          campaignTagSignals.length > 0
+            ? campaignTagSignals
+            : resolvedTags.map(({ tag, weight }) => ({ tag, weight })),
+        filterTags: resolvedTags.map(({ tag }) => tag),
+        filterTagsOperator: "union" as const,
         tagOperator: "union",
         take: Math.min(20, resolvedTags.length),
         explainability: true,
@@ -126,6 +158,7 @@ export async function enrichCreatorsWithQloo(
           : {}),
         inputWeight: tag.weight,
         sourceGroup: "creator" as const,
+        ...(campaignSignalIds.length > 0 ? { campaignSignalIds } : {}),
         evidence: {
           ...tag.evidence,
           fieldPath: "$.creator.contentSignals[]",
@@ -143,10 +176,12 @@ export async function enrichCreatorsWithQloo(
           personMatches
         )
       )
+      await reportProgress(creator.providerCreatorId)
     } catch {
       enriched.set(creator.providerCreatorId, creator)
+      await reportProgress(creator.providerCreatorId)
     }
-  }
+  })
 
   return creators.map(
     (creator) => enriched.get(creator.providerCreatorId) ?? creator
@@ -159,22 +194,32 @@ interface QlooPersonMatch {
   affinity?: number
   popularity?: number
   signals: QlooSignalRecord[]
+  campaignComparison?: QlooComparisonSummary
 }
 
 async function discoverPersonMatches(
   creators: NormalizedCreator[],
+  locationQuery: string,
   campaignSignals: CultureSignal[],
   conditioning: QlooCreatorConditioning,
-  client: QlooClient
+  client: QlooClient,
+  concurrency: number
 ): Promise<Map<string, QlooPersonMatch>> {
   const matches = new Map<string, QlooPersonMatch>()
-  for (const creator of creators) {
-    if (!creator.name.trim()) continue
+  await mapWithConcurrency(creators, concurrency, async (creator) => {
+    if (!creator.name.trim()) return
     try {
       const payload = await client.getInsights({
         filterType: "urn:entity:person",
         requestMethod: "POST",
         filterResultsEntitiesQuery: creator.name,
+        entitySignals: campaignSignals
+          .filter((signal) => signal.kind === "entity")
+          .slice(0, 10)
+          .map((signal) => ({
+            id: signal.signalId,
+            weight: signal.inputWeight ?? 20,
+          })),
         tagSignals: campaignSignals
           .filter(
             (signal) =>
@@ -186,16 +231,53 @@ async function discoverPersonMatches(
             weight: signal.inputWeight ?? 10,
           })),
         ...conditioning,
+        biasTrends: "high" as const,
         take: 1,
         explainability: true,
       })
       const person = readPersonMatches(payload, creator.name)[0]
-      if (person) matches.set(creator.providerCreatorId, person)
+      if (person) {
+        const campaignEntityIds = campaignSignals
+          .filter((signal) => signal.kind === "entity")
+          .map((signal) => signal.signalId)
+        const campaignComparison =
+          campaignEntityIds.length > 0
+            ? await compareCreatorToCampaign(
+                person.entityId,
+                campaignEntityIds,
+                locationQuery,
+                client
+              )
+            : undefined
+        matches.set(creator.providerCreatorId, {
+          ...person,
+          ...(campaignComparison ? { campaignComparison } : {}),
+        })
+      }
     } catch {
-      continue
+      return
     }
-  }
+  })
   return matches
+}
+
+async function mapWithConcurrency<Input>(
+  values: Input[],
+  concurrency: number,
+  worker: (value: Input) => Promise<void>
+): Promise<void> {
+  let nextIndex = 0
+  const workers = Array.from(
+    { length: Math.min(concurrency, values.length) },
+    async () => {
+      while (nextIndex < values.length) {
+        const index = nextIndex
+        nextIndex += 1
+        await worker(values[index])
+      }
+    }
+  )
+  await Promise.all(workers)
 }
 
 function applyPersonMatch(
@@ -221,6 +303,9 @@ function applyPersonMatch(
     ...(match.signals.length > 0
       ? { qlooPersonSignals: match.signals }
       : {}),
+    ...(match.campaignComparison
+      ? { qlooCampaignComparison: match.campaignComparison }
+      : {}),
     evidence: [
       ...creator.evidence,
       {
@@ -232,6 +317,69 @@ function applyPersonMatch(
         excerpt: `${match.name} person-level Qloo validation`,
       },
     ],
+  }
+}
+
+async function compareCreatorToCampaign(
+  creatorEntityId: string,
+  campaignEntityIds: string[],
+  locationQuery: string,
+  client: QlooClient
+): Promise<QlooComparisonSummary | undefined> {
+  try {
+    const payload = await client.compareInsights({
+      groupAEntityIds: [creatorEntityId],
+      groupBEntityIds: campaignEntityIds,
+      locationQuery,
+      take: 10,
+    })
+    return parseCreatorCampaignComparison(payload)
+  } catch {
+    return undefined
+  }
+}
+
+function parseCreatorCampaignComparison(
+  payload: unknown
+): QlooComparisonSummary | undefined {
+  if (!isRecord(payload)) return undefined
+  const results = payload.results
+  const values = Array.isArray(results)
+    ? results
+    : isRecord(results) && Array.isArray(results.tags)
+      ? results.tags
+      : isRecord(results) && Array.isArray(results.entities)
+        ? results.entities
+        : []
+  const topResults = values.flatMap((value) => {
+    if (!isRecord(value)) return []
+    const signalId =
+      readString(value.entity_id) ??
+      readString(value.tag_id) ??
+      readString(value.tag_value) ??
+      readString(value.id)
+    if (!signalId) return []
+    const query = isRecord(value.query) ? value.query : undefined
+    const affinity =
+      query && typeof query.affinity === "number"
+        ? query.affinity
+        : typeof value.affinity === "number"
+          ? value.affinity
+          : undefined
+    return [
+      {
+        signalId,
+        ...(readString(value.name) ? { name: readString(value.name) } : {}),
+        types: readStringArray(value.types),
+        ...(affinity !== undefined ? { affinity } : {}),
+      },
+    ]
+  })
+  return {
+    groupA: "creator",
+    groupB: "campaign",
+    resultCount: topResults.length,
+    topResults: topResults.slice(0, 10),
   }
 }
 
@@ -306,9 +454,26 @@ function readTagAffinities(payload: unknown): Map<string, number> {
   )
 }
 
-function readCreatorLimit(): number {
-  const value = Number(process.env.QLOO_CREATOR_ENRICH_LIMIT)
-  return Number.isInteger(value) && value > 0 ? Math.min(value, 50) : 20
+function buildCampaignTagSignals(
+  signals: CultureSignal[]
+): Array<{ tag: string; weight: number }> {
+  const preferredGroups = new Set(["combined", "product", "brand", "reference"])
+  const candidates = signals.filter(
+    (signal) =>
+      signal.kind === "tag" &&
+      signal.signalId.startsWith("urn:tag:") &&
+      (!signal.sourceGroup || preferredGroups.has(signal.sourceGroup))
+  )
+  const unique = new Map<string, { tag: string; weight: number }>()
+  for (const signal of candidates) {
+    if (!unique.has(signal.signalId)) {
+      unique.set(signal.signalId, {
+        tag: signal.signalId,
+        weight: signal.inputWeight ?? 10,
+      })
+    }
+  }
+  return [...unique.values()].slice(0, 12)
 }
 
 function extractCreatorTagQueries(
@@ -329,6 +494,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is string =>
+          typeof item === "string" && item.trim().length > 0
+      )
+    : []
 }
 
 function readNumber(value: unknown): number | undefined {

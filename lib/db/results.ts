@@ -57,7 +57,13 @@ export interface SafeCreatorResult {
   evidence: EvidenceRef[]
   caveats: string[]
   contentSignals?: Array<{ text: string; sourceField: string }>
-  qlooSignals?: Array<{ name: string; affinity?: number; sourceGroup: string }>
+  qlooSignals?: Array<{
+    name: string
+    affinity?: number
+    sourceGroup: string
+    campaignSignalIds?: string[]
+  }>
+  qlooCampaignComparison?: QlooComparisonSummary
   reportSummary?: string
   campaignConcept?: {
     title: string
@@ -186,9 +192,15 @@ function toSafeResult(
             ...(signal.affinity !== undefined
               ? { affinity: signal.affinity }
               : {}),
+            ...(signal.campaignSignalIds && signal.campaignSignalIds.length > 0
+              ? { campaignSignalIds: signal.campaignSignalIds }
+              : {}),
             sourceGroup: signal.sourceGroup,
           })),
         }
+      : {}),
+    ...(normalized.qlooCampaignComparison
+      ? { qlooCampaignComparison: normalized.qlooCampaignComparison }
       : {}),
     ...(match.report_summary ? { reportSummary: match.report_summary } : {}),
     ...(campaignConcept ? { campaignConcept } : {}),
@@ -215,6 +227,7 @@ function toSafeCultureProfile(
     summary.searchPlanSource === "model" || summary.searchPlanSource === "deterministic"
       ? summary.searchPlanSource
       : undefined
+  const searchPlanAgent = readSearchPlanAgent(summary.searchPlanAgent)
   const fingerprint = readFingerprint(summary.fingerprint)
   const researchTrace = readResearchTrace(summary.agentTrace)
   const agentState = readAgentState(summary)
@@ -236,11 +249,31 @@ function toSafeCultureProfile(
         ? summary.signalCount
         : signals.length,
     ...(searchPlanSource ? { searchPlanSource } : {}),
+    ...(searchPlanAgent ? { searchPlanAgent } : {}),
     ...(researchTrace.length > 0 ? { researchTrace } : {}),
     ...(agentState ? { agentState } : {}),
     ...(creatorSearchTrace.length > 0 ? { creatorSearchTrace } : {}),
     ...(autonomyBudget ? { autonomyBudget } : {}),
     ...(evidenceCritic ? { evidenceCritic } : {}),
+  }
+}
+
+function readSearchPlanAgent(
+  value: Json | undefined
+): SafeCultureProfile["searchPlanAgent"] | undefined {
+  if (!isObject(value) || typeof value.attempted !== "boolean") return undefined
+  if (
+    value.decisionMode !== "model" &&
+    value.decisionMode !== "deterministic_fallback"
+  ) {
+    return undefined
+  }
+  return {
+    attempted: value.attempted,
+    decisionMode: value.decisionMode,
+    ...(typeof value.fallbackReason === "string"
+      ? { fallbackReason: value.fallbackReason }
+      : {}),
   }
 }
 
@@ -346,6 +379,8 @@ function readAutonomyBudget(
     "actionsUsed",
     "maxProviderCalls",
     "providerCallsUsed",
+    "maxProviderRequests",
+    "providerRequestsUsed",
     "maxModelCalls",
     "modelCallsUsed",
   ] as const
@@ -355,6 +390,8 @@ function readAutonomyBudget(
     actionsUsed: value.actionsUsed as number,
     maxProviderCalls: value.maxProviderCalls as number,
     providerCallsUsed: value.providerCallsUsed as number,
+    maxProviderRequests: value.maxProviderRequests as number,
+    providerRequestsUsed: value.providerRequestsUsed as number,
     maxModelCalls: value.maxModelCalls as number,
     modelCallsUsed: value.modelCallsUsed as number,
   }
@@ -646,6 +683,9 @@ function readQlooSignal(value: Json): QlooSignalRecord[] {
       ...(typeof value.inputWeight === "number"
         ? { inputWeight: value.inputWeight }
         : {}),
+      ...(Array.isArray(value.campaignSignalIds)
+        ? { campaignSignalIds: value.campaignSignalIds.filter(isString) }
+        : {}),
       sourceGroup: value.sourceGroup,
       evidence: {
         source: value.evidence.source,
@@ -818,6 +858,12 @@ function readComparison(value: Json): BaselineComparison | undefined {
       ]
     }),
     materiallyChanged: value.materiallyChanged,
+    ...(typeof value.cultureDiscoveryRan === "boolean"
+      ? { cultureDiscoveryRan: value.cultureDiscoveryRan }
+      : {}),
+    ...(typeof value.refinementRan === "boolean"
+      ? { refinementRan: value.refinementRan }
+      : {}),
     ...(readQlooAblation(value.qlooAblation)
       ? { qlooAblation: readQlooAblation(value.qlooAblation) }
       : {}),
@@ -918,7 +964,12 @@ function buildMatchReasons(
   if (creator.qlooPersonEntityId !== undefined && creator.qlooPersonAffinity !== undefined) {
     reasons.push(`Exact Qloo person-entity affinity: ${(creator.qlooPersonAffinity * 100).toFixed(0)}/100`)
   } else if (culture?.score !== undefined && creator.qlooSignals?.length && creator.contentSignals.some((signal) => signal.evidenceKind !== "bio" && signal.sourceField !== "$.creator.bio")) {
-    reasons.push(`Qloo matched ${creator.qlooSignals.length} post/content signal${creator.qlooSignals.length === 1 ? "" : "s"}`)
+    const campaignSignals = creator.qlooSignals.filter(
+      (signal) => (signal.campaignSignalIds?.length ?? 0) > 0
+    )
+    if (campaignSignals.length > 0) {
+      reasons.push(`Qloo matched ${campaignSignals.length} observed content signal${campaignSignals.length === 1 ? "" : "s"} to the campaign culture profile`)
+    }
   }
   const engagement = components.find((component) => component.key === "engagementRate")
   if (creator.engagementRate !== undefined && engagement?.score !== undefined) {

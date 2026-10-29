@@ -53,8 +53,7 @@ QLOO_INSIGHTS_FILTER_TYPE
 QLOO_INSIGHTS_LOCATION_QUERY
 QLOO_INSIGHTS_TAKE
 QLOO_TAGS_URL
-QLOO_CREATOR_ENRICH_LIMIT
-QLOO_ENABLE_HEATMAP
+Qloo heatmap enrichment is requested automatically during cultural research when supported by the configured Qloo Insights endpoint.
 QLOO_HEATMAP_BOUNDARY
 QLOO_HEATMAP_TAKE
 OPENROUTER_API_KEY

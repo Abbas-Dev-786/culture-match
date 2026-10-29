@@ -80,7 +80,6 @@ export function createDeterministicSearchPlans(
   brief: CampaignBrief,
   signals: CultureSignal[]
 ): SearchPlans {
-  void signals
   const commonTerms = [
     brief.productCategory,
     brief.productDescription,
@@ -88,11 +87,29 @@ export function createDeterministicSearchPlans(
     ...brief.preferredLanguages.slice(0, 3),
     ...audienceTerms(brief),
   ]
+  const qlooTerms = signals
+    .filter(
+      (signal) =>
+        signal.sourceGroup !== "creator" &&
+        signal.evidence.verification !== "unverified"
+    )
+    .sort((left, right) => (right.affinity ?? 0) - (left.affinity ?? 0))
+    .slice(0, 4)
+    .map((signal) => signal.name)
+  const qlooSignalIds = signals
+    .filter(
+      (signal) =>
+        signal.sourceGroup !== "creator" &&
+        signal.evidence.verification !== "unverified"
+    )
+    .sort((left, right) => (right.affinity ?? 0) - (left.affinity ?? 0))
+    .slice(0, 4)
+    .map((signal) => signal.signalId)
   const baseline = buildPlan("baseline", brief, commonTerms.join(" "))
   const cultureInformed = buildPlan(
     "culture_informed",
     brief,
-    commonTerms.join(" ")
+    [...commonTerms, ...qlooTerms].join(" ")
   )
   return {
     baseline,
@@ -105,8 +122,8 @@ export function createDeterministicSearchPlans(
         query: baseline.query,
       },
       cultureInformed: {
-        qlooTerms: [],
-        qlooSignalIds: [],
+        qlooTerms,
+        qlooSignalIds,
         query: cultureInformed.query,
       },
     },

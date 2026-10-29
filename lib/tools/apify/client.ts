@@ -44,6 +44,7 @@ interface ApifyClientOptions {
   runTimeoutSeconds?: number
   maxItems?: number
   maxTotalChargeUsd?: number
+  onRequest?: () => void
 }
 
 const DEFAULT_ACTOR_ID = "influship~influencer-search"
@@ -67,7 +68,8 @@ export function createApifyClient(
           ...(idempotencyKey
             ? { headers: { "X-Idempotency-Key": idempotencyKey } }
             : {}),
-        }
+        },
+        options.onRequest
       )
       return parseRun(response)
     },
@@ -76,7 +78,9 @@ export function createApifyClient(
       const response = await requestJson(
         fetchImpl,
         `${config.apiBaseUrl}/actor-runs/${encodeURIComponent(runId)}`,
-        config
+        config,
+        undefined,
+        options.onRequest
       )
       return parseRun(response)
     },
@@ -85,7 +89,9 @@ export function createApifyClient(
       const response = await requestJson(
         fetchImpl,
         `${config.apiBaseUrl}/datasets/${encodeURIComponent(datasetId)}/items`,
-        config
+        config,
+        undefined,
+        options.onRequest
       )
       const payload = Array.isArray(response)
         ? response
@@ -195,11 +201,13 @@ async function requestJson(
   fetchImpl: JsonFetcher,
   input: string,
   config: { token: string; timeoutMs: number },
-  init: RequestInit = {}
+  init: RequestInit = {},
+  onRequest?: () => void
 ): Promise<unknown> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs)
   try {
+    onRequest?.()
     const response = await fetchImpl(input, {
       ...init,
       headers: {

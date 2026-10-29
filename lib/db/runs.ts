@@ -217,6 +217,45 @@ export async function updateRunProviderIds(
   return result.data
 }
 
+export async function updateRunProviderIdsForInitialComparison(
+  client: SupabaseClient<Database>,
+  run: AnalysisRunRow,
+  baselineProviderRunId: string,
+  baselineProviderDatasetId: string | undefined,
+  cultureProviderRunId: string,
+  cultureProviderDatasetId: string | undefined,
+  claimToken: string
+): Promise<AnalysisRunRow> {
+  const result = await client
+    .from("analysis_runs")
+    .update({
+      provider_run_id: cultureProviderRunId,
+      ...(cultureProviderDatasetId
+        ? { provider_dataset_id: cultureProviderDatasetId }
+        : {}),
+      baseline_provider_run_id: baselineProviderRunId,
+      ...(baselineProviderDatasetId
+        ? { baseline_provider_dataset_id: baselineProviderDatasetId }
+        : {}),
+      provider_start_claim_token: null,
+      provider_start_claimed_until: null,
+    })
+    .eq("id", run.id)
+    .eq("user_id", run.user_id)
+    .eq("provider_start_claim_token", claimToken)
+    .is("provider_run_id", null)
+    .is("baseline_provider_run_id", null)
+    .select("*")
+    .maybeSingle()
+  if (result.error || !result.data)
+    throw new ApplicationError(
+      "WORKFLOW_CONFLICT",
+      409,
+      "The initial comparison provider runs could not be persisted safely"
+    )
+  return result.data
+}
+
 export async function updateRunProviderIdForRefinement(
   client: SupabaseClient<Database>,
   run: AnalysisRunRow,

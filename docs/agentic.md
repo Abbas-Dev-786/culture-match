@@ -5,7 +5,7 @@ The implementation now uses a bounded agentic workflow: the model can choose val
 The current codebase includes:
 
 - A research supervisor action contract with persisted traces and evidence references.
-- Creator-search result criticism and one optional adaptive refinement, gated by `ENABLE_AGENTIC_CREATOR_REFINEMENT`.
+- Creator-search result criticism and one bounded adaptive refinement with in-product approval.
 - Evidence criticism that can accept, refine or stop with caveats.
 - Approval handling for higher-cost or broader actions through the persisted workflow.
 - Broad initial creator discovery without automatically injecting raw Qloo signal labels into the query.

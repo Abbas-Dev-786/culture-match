@@ -654,7 +654,6 @@ async function loadHeatmap(
   tags: ResolvedTag[],
   client: QlooClient
 ): Promise<QlooHeatmap | undefined> {
-  if (process.env.QLOO_ENABLE_HEATMAP !== "true") return undefined
   try {
     const payload = await client.getHeatmap({
       locationQuery,
@@ -808,6 +807,9 @@ function signalRecordToJson(signal: QlooSignalRecord): JsonObject {
     ...(signal.affinity !== undefined ? { affinity: signal.affinity } : {}),
     ...(signal.inputWeight !== undefined
       ? { inputWeight: signal.inputWeight }
+      : {}),
+    ...(signal.campaignSignalIds && signal.campaignSignalIds.length > 0
+      ? { campaignSignalIds: signal.campaignSignalIds }
       : {}),
     sourceGroup: signal.sourceGroup,
     evidence: {

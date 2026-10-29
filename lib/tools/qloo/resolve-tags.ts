@@ -1,7 +1,6 @@
 import type { EvidenceRef } from "../../domain/types.ts"
 import { ProviderError } from "../provider-errors.ts"
 import type { QlooClient } from "./client.ts"
-import { TAG_SEARCH_TYPES } from "./query-config.ts"
 
 export interface ResolvedTag {
   query: string
@@ -9,7 +8,12 @@ export interface ResolvedTag {
   tagId?: string
   name?: string
   types?: string[]
-  candidates: Array<{ tagId: string; name: string; types: string[] }>
+  candidates: Array<{
+    tagId: string
+    name: string
+    types: string[]
+    confidence?: number
+  }>
   evidence?: EvidenceRef
 }
 
@@ -21,13 +25,17 @@ export async function resolveTags(
   const results: ResolvedTag[] = []
   for (const query of uniqueNonEmpty(queries)) {
     const candidates = []
-    let exactMatches: Array<{ tagId: string; name: string; types: string[] }> =
+    let exactMatches: Array<{
+      tagId: string
+      name: string
+      types: string[]
+      confidence?: number
+    }> =
       []
     for (const searchQuery of tagSearchQueries(query)) {
       try {
         const payload = await client.searchTags({
           query: searchQuery,
-          tagTypes: TAG_SEARCH_TYPES,
           take: 5,
         })
         const searchCandidates = parseTagCandidates(payload)
@@ -78,7 +86,12 @@ export async function resolveTags(
     }
 
     const semanticMatch = uniqueCandidates[0]
-    if (exactMatches.length === 0 && semanticMatch) {
+    const semanticConfidence = semanticMatch?.confidence
+    const semanticResolutionAllowed =
+      Boolean(semanticMatch) &&
+      (uniqueCandidates.length === 1 ||
+        (semanticConfidence !== undefined && semanticConfidence >= 0.75))
+    if (exactMatches.length === 0 && semanticMatch && semanticResolutionAllowed) {
       results.push({
         query,
         status: "resolved",
@@ -100,7 +113,10 @@ export async function resolveTags(
 
     results.push({
       query,
-      status: exactMatches.length > 1 ? "ambiguous" : "unresolved",
+      status:
+        exactMatches.length > 1 || uniqueCandidates.length > 1
+          ? "ambiguous"
+          : "unresolved",
       candidates: uniqueCandidates,
     })
   }
@@ -114,22 +130,30 @@ export function expandTagQueries(queries: string[]): string[] {
       .replace(/\beye[\s-]?wears?\b/gi, "eyewear")
       .replace(/\b(?:generation|gen)\s*z\b/gi, "")
       .replace(/\bgenz\b/gi, "")
+      .replace(/\s+/g, " ")
+      .trim()
     if (!normalized || normalized.split(/\s+/).length <= 3) return [normalized]
 
-    return (
-      normalized
-        .match(/[\p{L}\p{N}]+/gu)
-        ?.filter(
-          (token) => !TAG_QUERY_STOP_WORDS.has(token.toLocaleLowerCase())
-        ) ?? []
-    )
+    const salient = normalized
+      .match(/[\p{L}\p{N}]+/gu)
+      ?.filter(
+        (token) => !TAG_QUERY_STOP_WORDS.has(token.toLocaleLowerCase())
+      )
+      .slice(0, 4)
+      .join(" ")
+    return salient ? [normalized, salient] : [normalized]
   })
   return uniqueNonEmpty(expanded)
 }
 
 export function parseTagCandidates(
   payload: unknown
-): Array<{ tagId: string; name: string; types: string[] }> {
+): Array<{
+  tagId: string
+  name: string
+  types: string[]
+  confidence?: number
+}> {
   if (!isRecord(payload)) {
     throw new ProviderError({
       provider: "qloo",
@@ -161,7 +185,18 @@ export function parseTagCandidates(
     const name = readString(value.name) ?? readString(value.title)
     const types = readStringArray(value.types ?? value.type)
     if (!tagId || !name) return []
-    return [{ tagId, name, types }]
+    const confidence =
+      readNumber(value.confidence) ??
+      readNumber(value.score) ??
+      readNumber(value.relevance_score)
+    return [
+      {
+        tagId,
+        name,
+        types,
+        ...(confidence !== undefined ? { confidence } : {}),
+      },
+    ]
   })
 }
 
@@ -223,4 +258,8 @@ function readStringArray(value: unknown): string[] {
           typeof item === "string" && item.trim().length > 0
       )
     : []
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }

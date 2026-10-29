@@ -49,6 +49,8 @@ export function CultureLift({
       change.cultureInformedRank !== undefined
   )
   const qlooLift = comparison.qlooAblation?.averageScoreDelta
+  const cultureDiscoveryRan = comparison.cultureDiscoveryRan === true
+  const refinementRan = comparison.refinementRan === true
 
   return (
     <Card className="print-break-inside-avoid overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm">
@@ -66,8 +68,11 @@ export function CultureLift({
                 Culture Lift
               </CardTitle>
               <CardDescription className="mt-2 max-w-2xl text-sm leading-6">
-                See what changed when Qloo cultural intelligence informed the
-                creator search—not just who was recommended.
+                {refinementRan
+                  ? "See what changed when Qloo cultural intelligence informed creator discovery, refinement and ranking."
+                  : cultureDiscoveryRan
+                    ? "See what changed when Qloo cultural intelligence informed creator discovery and ranking."
+                    : "See how Qloo enriched and ranked the broad creator shortlist. No second discovery search ran for this campaign."}
               </CardDescription>
             </div>
           </div>
@@ -92,9 +97,9 @@ export function CultureLift({
           />
           <LiftStat
             icon={<Sparkles className="size-4" aria-hidden="true" />}
-            label="Culture-informed"
+            label={refinementRan ? "Qloo-guided refinement" : cultureDiscoveryRan ? "Qloo-guided discovery" : "Qloo-enriched shortlist"}
             value={comparison.cultureInformedCount}
-            detail="Same constraints plus Qloo signals"
+            detail={refinementRan ? "Broad results plus Qloo-guided refinement" : cultureDiscoveryRan ? "Broad results plus Qloo-guided discovery" : "Same broad results, ranked with campaign resonance"}
             emphasis
           />
           <LiftStat
@@ -107,7 +112,7 @@ export function CultureLift({
             icon={<ListPlus className="size-4" aria-hidden="true" />}
             label="New discoveries"
             value={newDiscoveries.length}
-            detail="Only found by cultural search"
+            detail={refinementRan ? "Only found by Qloo-guided refinement" : cultureDiscoveryRan ? "Only found by Qloo-guided discovery" : "No second search ran; this should be zero"}
             emphasis={newDiscoveries.length > 0}
           />
           <LiftStat
@@ -132,9 +137,11 @@ export function CultureLift({
             <div>
               <p className="font-medium">What did Qloo change?</p>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                {comparison.materiallyChanged
-                  ? `Discovery changed: the cultural search introduced ${newDiscoveries.length} new ${newDiscoveries.length === 1 ? "creator" : "creators"}. Ranking changed for ${rankShifts.length} shared ${rankShifts.length === 1 ? "creator" : "creators"}.`
-                  : "The cultural signals did not materially change this shortlist. That is a valid result for this campaign."}
+                {cultureDiscoveryRan
+                  ? comparison.materiallyChanged
+                    ? `${refinementRan ? "Refinement" : "Discovery"} changed the shortlist: Qloo introduced ${newDiscoveries.length} new ${newDiscoveries.length === 1 ? "creator" : "creators"}. Ranking changed for ${rankShifts.length} shared ${rankShifts.length === 1 ? "creator" : "creators"}.`
+                    : `The Qloo-guided ${refinementRan ? "refinement" : "discovery"} did not materially change this shortlist. That is a valid result for this campaign.`
+                  : `No second discovery search ran. Qloo enriched observed creator content and ranked the same broad candidate pool; ${rankShifts.length} shared ${rankShifts.length === 1 ? "creator changed" : "creators changed"} rank.`}
               </p>
             </div>
             <Badge variant="outline" className="w-fit">
@@ -171,10 +178,10 @@ export function CultureLift({
             <div className="grid gap-4 lg:grid-cols-2">
               <DiscoveryList
                 title="New cultural discoveries"
-                description="Creators introduced by the Qloo-informed search."
+                description={refinementRan ? "Creators introduced by the Qloo-guided refinement search." : cultureDiscoveryRan ? "Creators introduced by the Qloo-guided discovery search." : "No second discovery search ran for this campaign."}
                 ids={newDiscoveries}
                 creators={creators}
-                emptyLabel="No creators were unique to the culture-informed search."
+                emptyLabel={cultureDiscoveryRan ? "No creators were unique to the Qloo-guided search." : "No creators can be unique to a second search because discovery did not run."}
               />
               <RankShiftList
                 changes={rankShifts}

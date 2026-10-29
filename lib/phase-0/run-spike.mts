@@ -61,7 +61,7 @@ async function main(): Promise<void> {
       qlooInsightsUrlConfigured: Boolean(qlooInsightsUrl),
       qlooTagsUrlConfigured: Boolean(process.env.QLOO_TAGS_URL?.trim()),
       qlooCompareUrlConfigured: Boolean(process.env.QLOO_COMPARE_URL?.trim()),
-      qlooHeatmapEnabled: process.env.QLOO_ENABLE_HEATMAP === "true",
+      qlooHeatmapRequested: true,
       apifyTokenConfigured: Boolean(apifyToken),
       apifyTimeoutSeconds,
     },

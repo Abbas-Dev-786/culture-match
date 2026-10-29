@@ -140,7 +140,8 @@ test("Qloo falls back to a scoped tag when entity resolution has no match", asyn
   assert.equal(resolved?.tagFallback?.tagId, "urn:tag:style:qloo:eyewear")
   assert.equal(resolved?.tagFallback?.name, "Eyewear")
   assert.match(requests[1] ?? "", /filter\.query=Eyewear/)
-  assert.match(requests[1] ?? "", /filter\.tag\.types=/)
+  assert.match(requests[1] ?? "", /feature\.semantic_search=true/)
+  assert.doesNotMatch(requests[1] ?? "", /filter\.tag\.types=/)
 })
 
 test("Qloo resolves punctuation variants such as Rayban to Ray-Ban", async () => {
@@ -216,14 +217,14 @@ test("Qloo normalizes generic references through tag aliases", async () => {
   )
   assert.deepEqual(
     expandTagQueries(["Premium sunglasses and eye-wears for genz"]),
-    ["sunglasses", "eyewear"]
+    ["Premium sunglasses and eyewear for", "sunglasses eyewear"]
   )
   assert.ok(searched.includes("beach"))
   assert.ok(searched.includes("party"))
   assert.ok(searched.includes("eyewear"))
 })
 
-test("Qloo accepts the ranked semantic tag result when no exact label exists", async () => {
+test("Qloo rejects ambiguous semantic tag results without confidence", async () => {
   const client = createQlooClient({
     baseUrl: "https://qloo.test",
     searchUrl: "https://qloo.test/search",
@@ -246,8 +247,8 @@ test("Qloo accepts the ranked semantic tag result when no exact label exists", a
   })
 
   const [resolved] = await resolveTags(["parties"], client)
-  assert.equal(resolved?.status, "resolved")
-  assert.equal(resolved?.tagId, "urn:tag:lifestyle:qloo:nightlife")
+  assert.equal(resolved?.status, "ambiguous")
+  assert.equal(resolved?.tagId, undefined)
 })
 
 test("Qloo uses a permissive operator for sparse tag resolution", () => {
@@ -563,7 +564,7 @@ test("Qloo validates creators from the documented person insight response", asyn
     JSON.stringify(personRequestBody?.["filter.results.entities.query"]),
     JSON.stringify(["Urban Streetwear"])
   )
-  assert.equal(personRequestBody?.["bias.trends"], undefined)
+  assert.equal(personRequestBody?.["bias.trends"], "high")
   assert.equal(personRequestBody?.["signal.demographics.age"], undefined)
   assert.equal(personRequestBody?.["signal.location.query"], undefined)
   assert.equal(personRequestUrl?.searchParams.has("filter.type"), false)

@@ -368,7 +368,7 @@ Every explanation should follow this pattern:
 
 ## 12. Advanced Qloo features
 
-These features are now integrated behind explicit user input or an environment flag.
+These features are now integrated into the workflow behind explicit user input and persisted provider evidence.
 
 ### Audience conditioning
 
@@ -376,7 +376,7 @@ The campaign form accepts supported Qloo audience IDs and relative weight, plus 
 
 ### Heatmap visualization
 
-Set `QLOO_ENABLE_HEATMAP=true` to retrieve Qloo heatmap points. The results page renders a compact signal-concentration visualization and labels it as Qloo geography, never creator audience geography.
+The workflow requests Qloo heatmap points automatically. The results page renders a compact signal-concentration visualization and labels it as Qloo geography, never creator audience geography.
 
 ### Entity comparison
 

@@ -83,6 +83,7 @@ export interface QlooSignalRecord {
   affinity?: number
   inputWeight?: number
   sourceGroup: QlooSignalGroup
+  campaignSignalIds?: string[]
   evidence: EvidenceRef
 }
 
@@ -259,6 +260,7 @@ export interface NormalizedCreator {
   contentSignals: CreatorContentSignal[]
   qlooSignals?: QlooSignalRecord[]
   qlooPersonSignals?: QlooSignalRecord[]
+  qlooCampaignComparison?: QlooComparisonSummary
   missingFields: string[]
   sourceFields: JsonObject
   evidence: EvidenceRef[]
@@ -305,6 +307,8 @@ export interface BaselineComparison {
     scoreDelta?: number
   }>
   materiallyChanged: boolean
+  cultureDiscoveryRan?: boolean
+  refinementRan?: boolean
   qlooAblation?: {
     scoredCreatorCount: number
     averageScoreDelta: number
@@ -343,6 +347,11 @@ export interface SafeCultureProfile {
   unresolvedReferences: string[]
   signalCount: number
   searchPlanSource?: "deterministic" | "model"
+  searchPlanAgent?: {
+    attempted: boolean
+    decisionMode: AgentDecisionMode
+    fallbackReason?: string
+  }
   researchTrace?: ResearchTraceEntry[]
   creatorSearchTrace?: AgentToolTrace[]
   autonomyBudget?: {
@@ -350,6 +359,8 @@ export interface SafeCultureProfile {
     actionsUsed: number
     maxProviderCalls: number
     providerCallsUsed: number
+    maxProviderRequests: number
+    providerRequestsUsed: number
     maxModelCalls: number
     modelCallsUsed: number
   }

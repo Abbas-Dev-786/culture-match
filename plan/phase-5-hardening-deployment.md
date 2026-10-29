@@ -129,7 +129,7 @@ Configure server-side secrets in the deployment provider:
 - Model provider key and model ID.
 - Supabase server credentials.
 
-For the bounded agentic path, also configure `ENABLE_AGENTIC_DECISIONS`, `ENABLE_AGENTIC_CREATOR_REFINEMENT`, and `AGENTIC_REQUIRE_APPROVAL` according to the deployment policy. Keep the creator-search refinement capped at one additional provider run per analysis.
+The bounded agentic path is integrated into the workflow. Refinement actions always require the in-product approval step and remain capped at one additional provider run per analysis.
 
 Configure only genuinely public values with a public environment prefix. Verify preview and production environments separately.
 

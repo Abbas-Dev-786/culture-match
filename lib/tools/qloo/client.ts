@@ -30,6 +30,7 @@ export interface QlooInsightsInput {
   entitySignals?: QlooWeightedEntity[]
   tagSignals?: QlooWeightedTag[]
   tagOperator?: "union" | "intersection"
+  filterTagsOperator?: "union" | "intersection"
   audienceIds?: string[]
   audienceWeight?: number
   ageRange?:
@@ -90,7 +91,6 @@ export interface QlooClient {
   searchTags(input: {
     query: string
     take: number
-    tagTypes?: string[]
   }): Promise<unknown>
   getInsights(input: QlooInsightsInput): Promise<unknown>
   compareInsights(input: QlooComparisonInput): Promise<unknown>
@@ -119,17 +119,19 @@ interface QlooClientOptions {
   apiKey?: string
   fetchImpl?: JsonFetcher
   timeoutMs?: number
+  onRequest?: () => void
 }
 
 const DEFAULT_TIMEOUT_MS = 20_000
 const QLOO_TAG_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1_000
 const QLOO_INSIGHTS_CACHE_TTL_MS = 24 * 60 * 60 * 1_000
 const QLOO_TRENDS_CACHE_TTL_MS = 60 * 60 * 1_000
-const qlooCache = new Map<string, { expiresAt: number; value: unknown }>()
+type QlooCache = Map<string, { expiresAt: number; value: unknown }>
 
 export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
   const config = readQlooConfig(options)
   const fetchImpl = options.fetchImpl ?? globalThis.fetch
+  const cache = new Map<string, { expiresAt: number; value: unknown }>()
 
   return {
     async searchEntities(input) {
@@ -145,7 +147,9 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
         "qloo",
         qlooEntitySearchResponseSchema,
         {},
-        QLOO_TAG_CACHE_TTL_MS
+        QLOO_TAG_CACHE_TTL_MS,
+        cache,
+        options.onRequest
       )
     },
     async searchTags(input) {
@@ -153,8 +157,6 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
       url.searchParams.set("filter.query", input.query)
       url.searchParams.set("feature.typo_tolerance", "true")
       url.searchParams.set("feature.semantic_search", "true")
-      if (input.tagTypes && input.tagTypes.length > 0)
-        url.searchParams.set("filter.tag.types", input.tagTypes.join(","))
       url.searchParams.set("take", String(input.take))
       return requestProviderJson(
         fetchImpl,
@@ -164,7 +166,9 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
         "qloo",
         qlooTagSearchResponseSchema,
         {},
-        QLOO_TAG_CACHE_TTL_MS
+        QLOO_TAG_CACHE_TTL_MS,
+        cache,
+        options.onRequest
       )
     },
     async getInsights(input) {
@@ -188,7 +192,9 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
               body: JSON.stringify(buildInsightsBody(input)),
             }
           : {},
-        QLOO_INSIGHTS_CACHE_TTL_MS
+        QLOO_INSIGHTS_CACHE_TTL_MS,
+        cache,
+        options.onRequest
       )
     },
     async compareInsights(input) {
@@ -215,7 +221,9 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
         "qloo",
         z.unknown(),
         {},
-        QLOO_INSIGHTS_CACHE_TTL_MS
+        QLOO_INSIGHTS_CACHE_TTL_MS,
+        cache,
+        options.onRequest
       )
     },
     async getHeatmap(input) {
@@ -260,7 +268,9 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
         "qloo",
         z.unknown(),
         {},
-        QLOO_INSIGHTS_CACHE_TTL_MS
+        QLOO_INSIGHTS_CACHE_TTL_MS,
+        cache,
+        options.onRequest
       )
     },
     async getTrending(input) {
@@ -278,7 +288,9 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
         "qloo",
         z.unknown(),
         {},
-        QLOO_TRENDS_CACHE_TTL_MS
+        QLOO_TRENDS_CACHE_TTL_MS,
+        cache,
+        options.onRequest
       )
     },
     async getLocationTaste(input) {
@@ -309,7 +321,9 @@ export function createQlooClient(options: QlooClientOptions = {}): QlooClient {
         "qloo",
         qlooInsightsResponseSchema,
         {},
-        QLOO_INSIGHTS_CACHE_TTL_MS
+        QLOO_INSIGHTS_CACHE_TTL_MS,
+        cache,
+        options.onRequest
       )
     },
   }
@@ -393,6 +407,8 @@ function setInsightsParams(url: URL, input: QlooInsightsInput): void {
   url.searchParams.set("take", String(input.take))
   if (input.filterTags && input.filterTags.length > 0)
     url.searchParams.set("filter.tags", input.filterTags.join(","))
+  if (input.filterTagsOperator && input.filterTags && input.filterTags.length > 0)
+    url.searchParams.set("operator.filter.tags", input.filterTagsOperator)
   if (input.tagTypes && input.tagTypes.length > 0)
     url.searchParams.set("filter.tag.types", input.tagTypes.join(","))
   if (input.filterResultsEntitiesQuery)
@@ -487,6 +503,8 @@ function buildInsightsBody(input: QlooInsightsInput): Record<string, unknown> {
   }
   if (input.filterTags && input.filterTags.length > 0)
     body["filter.tags"] = input.filterTags
+  if (input.filterTagsOperator)
+    body["operator.filter.tags"] = input.filterTagsOperator
   if (input.tagTypes && input.tagTypes.length > 0)
     body["filter.tag.types"] = input.tagTypes
   if (input.filterResultsEntitiesQuery)
@@ -545,18 +563,21 @@ async function requestProviderJson<T>(
   provider: "qloo" | "apify",
   schema: z.ZodType<T>,
   init: RequestInit = {},
-  cacheTtlMs = 0
+  cacheTtlMs = 0,
+  cache: QlooCache,
+  onRequest?: () => void
 ): Promise<T> {
   const cacheKey = `${provider}:${url.toString()}:${String(init.body ?? "")}`
-  if (cacheTtlMs > 0 && process.env.QLOO_CACHE_ENABLED === "true") {
-    const cached = qlooCache.get(cacheKey)
+  if (cacheTtlMs > 0) {
+    const cached = cache.get(cacheKey)
     if (cached && cached.expiresAt > Date.now()) return cached.value as T
-    if (cached) qlooCache.delete(cacheKey)
+    if (cached) cache.delete(cacheKey)
   }
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
+    onRequest?.()
     const response = await fetchImpl(url.toString(), {
       ...init,
       headers: {
@@ -581,8 +602,8 @@ async function requestProviderJson<T>(
       })
     }
 
-    if (cacheTtlMs > 0 && process.env.QLOO_CACHE_ENABLED === "true") {
-      qlooCache.set(cacheKey, {
+    if (cacheTtlMs > 0) {
+      cache.set(cacheKey, {
         expiresAt: Date.now() + cacheTtlMs,
         value: parsed.data,
       })

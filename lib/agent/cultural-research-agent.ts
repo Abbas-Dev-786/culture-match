@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
-import { generateText, Output } from "ai"
+import { generateText, isStepCount, tool, ToolLoopAgent } from "ai"
 import type {
   AgentDecisionMode,
   CampaignBrief,
@@ -9,12 +9,14 @@ import type {
 } from "../domain/types.ts"
 import {
   analyzeCulture,
+  type CultureResearchOptions,
   type CultureResearchResult,
 } from "../tools/qloo/analyze-culture.ts"
 import type { QlooClient } from "../tools/qloo/client.ts"
 import { ProviderError } from "../tools/provider-errors.ts"
 import { expandTagQueries } from "../tools/qloo/resolve-tags.ts"
 import { decisionModeFromEnvironment } from "./action-trace.ts"
+import { executeAgentTool } from "./tool-execution.ts"
 
 export const MAX_RESEARCH_REFINEMENTS = 2
 const MAX_AGENT_TAG_QUERIES = 4
@@ -85,6 +87,28 @@ const researchEvidenceSchema = z
     affinitySignalCount: z.number().int().nonnegative(),
     populatedLayerCount: z.number().int().nonnegative(),
     unresolvedInputCount: z.number().int().nonnegative(),
+  })
+  .strict()
+
+const researchModelActionSchema = z
+  .object({
+    action: z.enum([
+      "resolve_cultural_references",
+      "query_market_culture",
+      "query_product_culture",
+      "compare_brand_and_references",
+      "request_qloo_heatmap",
+      "broaden_inputs",
+      "narrow_inputs",
+      "stop_research",
+    ]),
+    focus: z
+      .enum(["campaign_fingerprint", "market_context", "product_context"])
+      .optional(),
+    selection: z.unknown().optional(),
+    parameters: z.unknown().optional(),
+    summary: z.string().trim().max(240).optional(),
+    rejectedActions: z.array(z.string().trim().min(1).max(120)).max(6).optional(),
   })
   .strict()
 
@@ -173,6 +197,7 @@ export interface ResearchDecisionResult {
   action?: ResearchSupervisorAction
   mode: AgentDecisionMode
   fallbackReason?: string
+  modelCallCount?: number
 }
 
 export async function runCulturalResearchAgent(
@@ -186,6 +211,7 @@ export async function runCulturalResearchAgent(
   const rejectedActions: string[] = []
   const decisionModes: AgentDecisionMode[] = []
   const fallbackReasons: string[] = []
+  let modelCallCount = 0
 
   addTrace(trace, {
     action: "select_research_inputs",
@@ -202,6 +228,7 @@ export async function runCulturalResearchAgent(
       refinementCount
     )
     decisionModes.push(plannedDecision.mode)
+    modelCallCount += plannedDecision.modelCallCount ?? 0
     if (plannedDecision.fallbackReason)
       fallbackReasons.push(plannedDecision.fallbackReason)
     const plannedAction = plannedDecision.action
@@ -230,12 +257,43 @@ export async function runCulturalResearchAgent(
     })
 
     try {
-      lastResult = await analyzeCulture(brief, client, new Date().toISOString(), {
-        selection,
-        ...(plannedAction?.action
-          ? { requestedAction: plannedAction.action }
-          : {}),
-      })
+      const researchTool = {
+        name: "qloo_cultural_research",
+        provider: "qloo" as const,
+        inputSchema: z.object({
+          selection: researchSelectionSchema,
+          requestedAction: z
+            .enum([
+              "resolve_cultural_references",
+              "query_market_culture",
+              "query_product_culture",
+              "compare_brand_and_references",
+              "request_qloo_heatmap",
+              "broaden_inputs",
+              "narrow_inputs",
+            ])
+            .optional(),
+        }),
+        outputSchema: z.custom<CultureResearchResult>(isCultureResearchResult),
+        execute: async (input: {
+          selection: ResearchSelection
+          requestedAction?: CultureResearchOptions["requestedAction"]
+        }) =>
+          analyzeCulture(brief, client, new Date().toISOString(), {
+            selection: input.selection,
+            ...(input.requestedAction
+              ? { requestedAction: input.requestedAction }
+              : {}),
+          }),
+      }
+      lastResult = (
+        await executeAgentTool(researchTool, {
+          selection,
+          ...(plannedAction?.action
+            ? { requestedAction: plannedAction.action }
+            : {}),
+        })
+      ).output
     } catch (error) {
       if (!isSparseResearchError(error) || attempt >= MAX_RESEARCH_REFINEMENTS)
         throw error
@@ -326,7 +384,7 @@ export async function runCulturalResearchAgent(
         ? "model"
         : "deterministic_fallback",
       actionCount: trace.length,
-      modelDecisionCount: decisionModes.filter((mode) => mode === "model").length,
+      modelDecisionCount: modelCallCount,
       ...(fallbackReasons[0] ? { fallbackReason: fallbackReasons[0] } : {}),
       stopReason:
         refinementCount >= MAX_RESEARCH_REFINEMENTS
@@ -348,51 +406,336 @@ export async function chooseResearchAction(
   const modelId = process.env.OPENROUTER_MODEL?.trim() as string
 
   try {
-    const response = await generateText({
-      model: createOpenRouter({ apiKey })(modelId),
-      output: Output.object({ schema: researchSupervisorActionSchema }),
-      maxOutputTokens: 700,
-      prompt: [
-        "Choose exactly one bounded Qloo research action for this campaign.",
-        "The action must use only the supplied selection fields and must not invent provider parameters.",
-        `Refinement budget remaining: ${Math.max(0, MAX_RESEARCH_REFINEMENTS - refinementCount)}.`,
-        JSON.stringify({
-          campaign: {
-            brandName: brief.brandName,
-            productCategory: brief.productCategory,
-            objective: brief.objective,
-            market: brief.targetMarket,
-            culturalReferences: brief.culturalReferences,
-          },
-          currentSelection: selection,
-          evidence: result ? evaluateResearchEvidence(result).evidence : emptyEvidence(),
-          availableActions: [
-            "resolve_cultural_references",
-            "query_market_culture",
-            "query_product_culture",
-            "compare_brand_and_references",
-            "request_qloo_heatmap",
-            "broaden_inputs",
-            "narrow_inputs",
-            "stop_research",
-          ],
-        }),
-      ].join("\n"),
+    const chooseResearchActionTool = tool({
+      description:
+        "Choose exactly one validated, bounded Qloo research action for the campaign.",
+      inputSchema: researchModelActionSchema,
+      execute: async (input) => {
+        const action = normalizeResearchModelAction(input, selection)
+        if (!action)
+          throw new Error("Research model action could not be validated")
+        return action
+      },
     })
-    if (!response.output)
+    const agent = new ToolLoopAgent({
+      model: createOpenRouter({ apiKey })(modelId),
+      instructions: [
+        "You are the cultural research supervisor.",
+        "Use the chooseResearchAction tool exactly once.",
+        "Choose only actions supported by the provided campaign evidence and selection.",
+        "Do not invent provider parameters, credentials, URLs, or unlisted actions.",
+      ].join(" "),
+      tools: { chooseResearchAction: chooseResearchActionTool },
+      toolChoice: "auto",
+      stopWhen: isStepCount(1),
+      maxOutputTokens: 700,
+      providerOptions: {
+        openrouter: {
+          reasoning: { max_tokens: 256, exclude: true },
+        },
+      },
+    })
+    const response = await agent.generate({
+      timeout: 20_000,
+      prompt: researchActionPrompt(brief, selection, result, refinementCount),
+    })
+    const toolResult = response.toolResults.find(
+      (item) => item.toolName === "chooseResearchAction"
+    )
+    if (!toolResult) {
+      const textAction = researchModelActionSchema.safeParse(
+        parseJsonObject(response.text)
+      )
+      const normalizedTextAction = textAction.success
+        ? normalizeResearchModelAction(textAction.data, selection)
+        : undefined
+      if (normalizedTextAction) {
+        return {
+          action: normalizedTextAction,
+          mode: "model",
+          modelCallCount: 1,
+        }
+      }
+      const textDecision = await chooseResearchActionWithJsonText(
+        brief,
+        selection,
+        result,
+        refinementCount,
+        modelId,
+        apiKey
+      )
+      if (textDecision) return textDecision
       return {
         mode: "deterministic_fallback",
         fallbackReason: "research_model_returned_no_action",
+        modelCallCount: 2,
       }
-    return {
-      action: researchSupervisorActionSchema.parse(response.output),
-      mode: "model",
     }
-  } catch {
+    const action = researchSupervisorActionSchema.parse(toolResult.output)
+    return {
+      action,
+      mode: "model",
+      modelCallCount: 1,
+    }
+  } catch (error) {
+    const reason = researchModelFailureReason(error)
+    if (reason === "research_model_tool_call_unsupported") {
+      const textDecision = await chooseResearchActionWithJsonText(
+        brief,
+        selection,
+        result,
+        refinementCount,
+        modelId,
+        apiKey
+      )
+      if (textDecision) return textDecision
+    }
+    console.warn(
+      "research_agent_model_fallback",
+      JSON.stringify({
+        model: modelId,
+        reason,
+        error: researchModelErrorDetail(error),
+      })
+    )
     return {
       mode: "deterministic_fallback",
-      fallbackReason: "research_model_action_invalid_or_unavailable",
+      fallbackReason: reason,
+      modelCallCount: reason === "research_model_tool_call_unsupported" ? 2 : 1,
     }
+  }
+}
+
+function researchModelFailureReason(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase()
+    if (message.includes("401") || message.includes("unauthorized"))
+      return "research_model_authentication_failed"
+    if (message.includes("429") || message.includes("rate limit"))
+      return "research_model_rate_limited"
+    if (
+      error.name === "AI_ToolChoiceViolationError" ||
+      message.includes("did not contain a tool call") ||
+      (message.includes("tool") && message.includes("support"))
+    )
+      return "research_model_tool_call_unsupported"
+    if (message.includes("timeout") || message.includes("timed out"))
+      return "research_model_timeout"
+    if (message.includes("no endpoints"))
+      return "research_model_no_provider_endpoint"
+  }
+  return "research_model_request_failed"
+}
+
+async function chooseResearchActionWithJsonText(
+  brief: CampaignBrief,
+  selection: ResearchSelection,
+  result: CultureResearchResult | undefined,
+  refinementCount: number,
+  modelId: string,
+  apiKey: string
+): Promise<ResearchDecisionResult | undefined> {
+  try {
+    const response = await generateText({
+      model: createOpenRouter({ apiKey })(modelId),
+      timeout: 20_000,
+      maxOutputTokens: 700,
+      providerOptions: {
+        openrouter: {
+          reasoning: { max_tokens: 256, exclude: true },
+        },
+      },
+      prompt: [
+        "Return only one JSON object for the validated Qloo research action.",
+        "Do not use markdown, code fences, commentary, or extra keys.",
+        researchActionPrompt(brief, selection, result, refinementCount),
+      ].join("\n"),
+    })
+    const parsed = parseJsonObject(response.text)
+    const action = researchModelActionSchema.safeParse(parsed)
+    const normalizedAction = action.success
+      ? normalizeResearchModelAction(action.data, selection)
+      : undefined
+    if (!normalizedAction) {
+      console.warn(
+        "research_agent_json_fallback_invalid",
+        JSON.stringify({
+          model: modelId,
+          output: response.text.slice(0, 300),
+          issueCount: action.success ? 1 : action.error.issues.length,
+        })
+      )
+      return undefined
+    }
+    return { action: normalizedAction, mode: "model", modelCallCount: 2 }
+  } catch (error) {
+    console.warn(
+      "research_agent_json_fallback_failed",
+      JSON.stringify({ model: modelId, error: researchModelErrorDetail(error) })
+    )
+    return undefined
+  }
+}
+
+function researchActionPrompt(
+  brief: CampaignBrief,
+  selection: ResearchSelection,
+  result: CultureResearchResult | undefined,
+  refinementCount: number
+): string {
+  return [
+    "Choose exactly one bounded Qloo research action for this campaign.",
+    "The action must use only the supplied selection fields and must not invent provider parameters.",
+    `Refinement budget remaining: ${Math.max(0, MAX_RESEARCH_REFINEMENTS - refinementCount)}.`,
+    JSON.stringify({
+      campaign: {
+        brandName: brief.brandName,
+        productCategory: brief.productCategory,
+        objective: brief.objective,
+        market: brief.targetMarket,
+        culturalReferences: brief.culturalReferences,
+      },
+      currentSelection: selection,
+      evidence: result ? evaluateResearchEvidence(result).evidence : emptyEvidence(),
+      availableActions: [
+        "resolve_cultural_references",
+        "query_market_culture",
+        "query_product_culture",
+        "compare_brand_and_references",
+        "request_qloo_heatmap",
+        "broaden_inputs",
+        "narrow_inputs",
+        "stop_research",
+      ],
+    }),
+  ].join("\n")
+}
+
+function parseJsonObject(text: string): unknown {
+  const normalized = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+  try {
+    return JSON.parse(normalized) as unknown
+  } catch {
+    const start = normalized.indexOf("{")
+    const end = normalized.lastIndexOf("}")
+    if (start < 0 || end <= start) return undefined
+    try {
+      return JSON.parse(normalized.slice(start, end + 1)) as unknown
+    } catch {
+      return undefined
+    }
+  }
+}
+
+export function normalizeResearchModelAction(
+  input: z.infer<typeof researchModelActionSchema>,
+  currentSelection: ResearchSelection
+): ResearchSupervisorAction | undefined {
+  const parameters = isRecord(input.parameters) ? input.parameters : {}
+  const modelSelection = isRecord(input.selection)
+    ? input.selection
+    : parameters
+  const requestedFocus =
+    input.focus ??
+    (isResearchFocus(parameters.focus) ? parameters.focus : undefined)
+  const focus = focusForResearchAction(input.action, requestedFocus)
+  const safeSelection = researchSelectionSchema.parse({
+    ...currentSelection,
+    focus,
+    ...(typeof modelSelection.includeBrand === "boolean"
+      ? { includeBrand: modelSelection.includeBrand }
+      : {}),
+    ...(Array.isArray(modelSelection.references)
+      ? {
+          references: modelSelection.references.filter(
+            (value): value is string =>
+              typeof value === "string" && value.trim().length >= 2
+          ),
+        }
+      : {}),
+    ...(Array.isArray(modelSelection.tagQueries)
+      ? {
+          tagQueries: modelSelection.tagQueries.filter(
+            (value): value is string =>
+              typeof value === "string" && value.trim().length >= 2
+          ),
+        }
+      : {}),
+  })
+  const summary =
+    input.summary?.trim() ||
+    `The research model selected ${input.action.replaceAll("_", " ")}.`
+  const rejectedActions = input.rejectedActions ?? []
+  const candidate =
+    input.action === "stop_research"
+      ? {
+          action: input.action,
+          focus,
+          summary,
+          rejectedActions,
+        }
+      : {
+          action: input.action,
+          focus,
+          selection: safeSelection,
+          summary,
+          rejectedActions,
+        }
+  const parsed = researchSupervisorActionSchema.safeParse(candidate)
+  return parsed.success ? parsed.data : undefined
+}
+
+function isResearchFocus(value: unknown): value is ResearchSelection["focus"] {
+  return (
+    value === "campaign_fingerprint" ||
+    value === "market_context" ||
+    value === "product_context"
+  )
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function focusForResearchAction(
+  action: z.infer<typeof researchModelActionSchema>["action"],
+  requestedFocus: z.infer<typeof researchModelActionSchema>["focus"]
+): ResearchSelection["focus"] {
+  if (action === "resolve_cultural_references") return "campaign_fingerprint"
+  if (action === "compare_brand_and_references") return "campaign_fingerprint"
+  if (action === "request_qloo_heatmap") return "campaign_fingerprint"
+  if (action === "query_market_culture") return "market_context"
+  if (action === "query_product_culture") return "product_context"
+  return requestedFocus ?? "campaign_fingerprint"
+}
+
+function researchModelErrorDetail(error: unknown): {
+  name: string
+  message: string
+  status?: number
+} {
+  if (!(error instanceof Error))
+    return { name: "UnknownError", message: "unknown model error" }
+  const record = error as Error & {
+    statusCode?: unknown
+    status?: unknown
+  }
+  const status =
+    typeof record.statusCode === "number"
+      ? record.statusCode
+      : typeof record.status === "number"
+        ? record.status
+        : undefined
+  return {
+    name: error.name,
+    message: error.message
+      .replaceAll(/Bearer\s+[^\s]+/gi, "Bearer [redacted]")
+      .replaceAll(/sk-[A-Za-z0-9_-]+/g, "[redacted]")
+      .slice(0, 300),
+    ...(status !== undefined ? { status } : {}),
   }
 }
 
@@ -543,6 +886,22 @@ function emptyEvidence(): ResearchEvidence {
     populatedLayerCount: 0,
     unresolvedInputCount: 0,
   }
+}
+
+function isCultureResearchResult(value: unknown): value is CultureResearchResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  return (
+    Array.isArray(record.signals) &&
+    Array.isArray(record.resolvedReferences) &&
+    Array.isArray(record.resolvedTags) &&
+    typeof record.location === "object" &&
+    record.location !== null &&
+    typeof record.fingerprint === "object" &&
+    record.fingerprint !== null &&
+    typeof record.providerSummary === "object" &&
+    record.providerSummary !== null
+  )
 }
 
 function isSparseResearchError(error: unknown): error is ProviderError {

@@ -78,7 +78,7 @@ Use **one orchestrator agent with a narrow toolset**, inside an explicit workflo
 - Maximum one research decision and one creator refinement decision per workflow stage, plus one optional report call.
 - Entity spelling retries and tag fallback are bounded inside the Qloo adapter; there is no free-running agent loop.
 - One broad Apify run is created per analysis attempt; at most one optional refinement run may be created after a justified agent decision.
-- Creator enrichment is capped by `QLOO_CREATOR_ENRICH_LIMIT`; creator results are capped by the campaign limit.
+- Qloo creator enrichment covers the full campaign result set, capped at 100 creators.
 - If evidence remains insufficient, preserve unavailable fields and continue with transparent caveats rather than inventing data.
 
 AI SDK tool definitions should use Zod schemas and narrow `execute` functions. Use `stopWhen`/step limits supported by the installed AI SDK version and add a workflow-level budget that does not depend on the model stopping correctly. See the AI SDK tool-calling reference listed in the References section.
@@ -107,12 +107,12 @@ Allowed transitions should be enforced in server-side code. `completed`, `failed
 3. Resolve product, description and unresolved-reference terms through Qloo tag search with typo tolerance, semantic search and relevant tag namespaces.
 4. Execute five Qloo Taste Analysis layers—market, brand, product, reference and combined—using location signals, scoped tag types, centralized demographic serialization and safe entity weighting. Use `union` for sparse combined tags and `intersection` only when at least five tags resolve.
 5. Persist normalized culture signals, provider summary and optional short-lived raw payload. Fail the culture stage when no usable cultural signal exists; do not silently downgrade the run to an unlabeled baseline.
-6. Build the broad Apify plan without raw Qloo query terms. If `ENABLE_AGENTIC_CREATOR_REFINEMENT=true`, let the creator-search agent and evidence critic propose a schema-validated refinement action using selected signals and preserved constraints.
+6. Build the broad Apify plan without raw Qloo query terms. Let the creator-search agent and evidence critic always evaluate one schema-validated refinement action using selected signals and preserved constraints.
 7. Claim provider start once, start the broad Apify run, and start at most one refinement run when the decision is approved. Persist every run ID/dataset ID and the critic rationale. Browser polling never creates provider runs.
 8. Poll the app-owned workflow; read terminal datasets, normalize observed fields, de-duplicate creators and persist the broad result in the existing `baseline` slot. If refinement runs, persist its candidates in the existing `culture_informed` slot.
 9. Enrich the combined creator set with location-conditioned Qloo tag affinity. For named creators, run POST person validation with `filter.results.entities.query`, campaign tags, demographic conditioning and `bias.trends=high`; omit person location signals and keep missing matches unavailable.
 10. Score the broad and optional refinement candidate sets with deterministic component evidence; apply Qloo resonance only to the cultural component and preserve the Qloo-off ablation. Persist completeness, caveats and comparison metrics.
-11. When `ENABLE_MODEL_REPORTS=true`, generate validated reports for the top five enriched/refined matches using only persisted evidence. Deterministic score data remains authoritative if model output is unavailable.
+11. Generate validated reports for the top five enriched/refined matches when OpenRouter credentials are present, using only persisted evidence. Deterministic score data remains authoritative if model output is unavailable.
 12. UI polls the app's status endpoint and fetches the persisted, client-safe result.
 
 ### Failure handling
@@ -166,7 +166,7 @@ Actor: `influship/influencer-search`.
 
 ### 6.3 Language model provider
 
-Abstract provider-specific setup behind `lib/agent/model.ts`. Keep a single model for MVP. Agentic research decisions are enabled with `ENABLE_AGENTIC_DECISIONS=true`; creator refinement additionally requires `ENABLE_AGENTIC_CREATOR_REFINEMENT=true` and is capped at one extra search. The report call is optional (`ENABLE_MODEL_REPORTS=true`) and is limited to the top five enriched/refined matches. Zod-validate all generated objects and require returned evidence keys to exist in the supplied evidence bundle. Prompts must treat provider payloads as untrusted data: external text can contain prompt injection, so do not follow instructions embedded in creator bios or scraped content.
+Abstract provider-specific setup behind `lib/agent/model.ts`. Use the configured model automatically when credentials are present; deterministic fallbacks remain available for model outages or missing credentials. Creator refinement is always available to the bounded decision flow and capped at one extra search. The report call is limited to the top five enriched/refined matches. Zod-validate all generated objects and require returned evidence keys to exist in the supplied evidence bundle. Prompts must treat provider payloads as untrusted data: external text can contain prompt injection, so do not follow instructions embedded in creator bios or scraped content.
 
 ## 7. Data contracts and TypeScript domain types
 
@@ -422,9 +422,6 @@ QLOO_COMPARE_URL=
 QLOO_TRENDS_URL=
 QLOO_API_KEY=
 QLOO_TIMEOUT_MS=20000
-QLOO_CACHE_ENABLED=false
-QLOO_CREATOR_ENRICH_LIMIT=20
-QLOO_ENABLE_HEATMAP=false
 QLOO_HEATMAP_BOUNDARY=geohash
 QLOO_HEATMAP_TAKE=100
 APIFY_API_TOKEN=
@@ -436,10 +433,7 @@ APIFY_MAX_TOTAL_CHARGE_USD=5
 APIFY_START_LEASE_MS=120000
 APIFY_WEBHOOK_SECRET=
 
-# Agentic and model features
-ENABLE_AGENTIC_DECISIONS=false
-ENABLE_AGENTIC_CREATOR_REFINEMENT=false
-ENABLE_MODEL_REPORTS=false
+# Model provider (optional; deterministic fallbacks remain operational)
 OPENROUTER_API_KEY=
 OPENROUTER_MODEL=qwen/qwen3.8-27b:free
 

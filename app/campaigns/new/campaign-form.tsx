@@ -43,6 +43,8 @@ interface CampaignFormInput {
   city: string
   marketScope: MarketScope
   objective: string
+  qlooAudienceIds: string
+  qlooAudienceWeight: string
   minFollowers: string
   maxFollowers: string
   minBudget: string
@@ -96,6 +98,8 @@ export function CampaignForm() {
   const [preferredLanguages, setPreferredLanguages] = useState("")
   const [qlooAgeRange, setQlooAgeRange] = useState<QlooAgeRange | "">("")
   const [qlooGender, setQlooGender] = useState<QlooGender | "">("")
+  const [qlooAudienceIds, setQlooAudienceIds] = useState("")
+  const [qlooAudienceWeight, setQlooAudienceWeight] = useState("")
   const [minFollowers, setMinFollowers] = useState("")
   const [maxFollowers, setMaxFollowers] = useState("")
   const [minBudget, setMinBudget] = useState("")
@@ -115,6 +119,8 @@ export function CampaignForm() {
     city,
     marketScope,
     objective,
+    qlooAudienceIds,
+    qlooAudienceWeight,
     minFollowers,
     maxFollowers,
     minBudget,
@@ -180,6 +186,12 @@ export function CampaignForm() {
             preferredLanguages: splitList(preferredLanguages),
             ...(qlooAgeRange ? { qlooAgeRange } : {}),
             ...(qlooGender ? { qlooGender } : {}),
+            ...(splitList(qlooAudienceIds).length > 0
+              ? { qlooAudienceIds: splitList(qlooAudienceIds) }
+              : {}),
+            ...(qlooAudienceWeight.trim()
+              ? { qlooAudienceWeight: optionalNumber(qlooAudienceWeight) }
+              : {}),
             minFollowers: optionalNumber(minFollowers),
             maxFollowers: optionalNumber(maxFollowers),
             minBudget: optionalNumber(minBudget),
@@ -338,6 +350,10 @@ export function CampaignForm() {
                     onQlooAgeRangeChange={setQlooAgeRange}
                     qlooGender={qlooGender}
                     onQlooGenderChange={setQlooGender}
+                    qlooAudienceIds={qlooAudienceIds}
+                    onQlooAudienceIdsChange={setQlooAudienceIds}
+                    qlooAudienceWeight={qlooAudienceWeight}
+                    onQlooAudienceWeightChange={setQlooAudienceWeight}
                   />
                 ) : null}
 
@@ -539,6 +555,10 @@ function AudienceStep({
   onQlooAgeRangeChange,
   qlooGender,
   onQlooGenderChange,
+  qlooAudienceIds,
+  onQlooAudienceIdsChange,
+  qlooAudienceWeight,
+  onQlooAudienceWeightChange,
 }: {
   culturalReferences: string
   onCulturalReferencesChange: (value: string) => void
@@ -548,12 +568,16 @@ function AudienceStep({
   onQlooAgeRangeChange: (value: QlooAgeRange | "") => void
   qlooGender: QlooGender | ""
   onQlooGenderChange: (value: QlooGender | "") => void
+  qlooAudienceIds: string
+  onQlooAudienceIdsChange: (value: string) => void
+  qlooAudienceWeight: string
+  onQlooAudienceWeightChange: (value: string) => void
 }) {
   return (
     <section className="grid gap-5" aria-labelledby="signals-heading">
       <div>
         <h2 id="signals-heading" className="font-medium">Add cultural and audience signals</h2>
-        <p className="mt-1 text-sm text-muted-foreground">These inputs shape the Qloo profile and the culture-informed search query.</p>
+        <p className="mt-1 text-sm text-muted-foreground">These inputs define the campaign culture profile. Qloo matches observed creator content to it, ranks the shortlist, and can optionally guide one refinement search.</p>
       </div>
       <div className="grid gap-5 md:grid-cols-2">
         <Field>
@@ -565,6 +589,18 @@ function AudienceStep({
           <FieldLabel htmlFor="preferredLanguages">Language needs</FieldLabel>
           <Input id="preferredLanguages" value={preferredLanguages} onChange={(event) => onPreferredLanguagesChange(event.target.value)} placeholder="German, English" />
           <FieldDescription>Separate languages with commas.</FieldDescription>
+        </Field>
+      </div>
+      <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_180px]">
+        <Field>
+          <FieldLabel htmlFor="qlooAudienceIds">Qloo audience IDs (advanced)</FieldLabel>
+          <Input id="qlooAudienceIds" value={qlooAudienceIds} onChange={(event) => onQlooAudienceIdsChange(event.target.value)} placeholder="urn:audience:..." />
+          <FieldDescription>Optional comma-separated Qloo audience IDs supplied by your team. IDs are never inferred from free text.</FieldDescription>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="qlooAudienceWeight">Audience weight</FieldLabel>
+          <Input id="qlooAudienceWeight" type="number" min="1" max="100" value={qlooAudienceWeight} onChange={(event) => onQlooAudienceWeightChange(event.target.value)} placeholder="10" />
+          <FieldDescription>Optional signal weight from 1 to 100.</FieldDescription>
         </Field>
       </div>
       <div className="grid gap-5 md:grid-cols-2">
@@ -710,6 +746,10 @@ function validateForm(input: CampaignFormInput): string | undefined {
   if (input.minFollowers.trim() && min === undefined) return "Minimum followers must be a valid number."
   if (input.maxFollowers.trim() && max === undefined) return "Maximum followers must be a valid number."
   if (min !== undefined && max !== undefined && min > max) return "Minimum followers cannot exceed maximum followers."
+  const audienceWeight = optionalNumber(input.qlooAudienceWeight)
+  if (input.qlooAudienceWeight.trim() && audienceWeight === undefined) return "Audience weight must be a valid number."
+  if (audienceWeight !== undefined && (audienceWeight < 1 || audienceWeight > 100)) return "Audience weight must be between 1 and 100."
+  if (audienceWeight !== undefined && splitList(input.qlooAudienceIds).length === 0) return "Add at least one Qloo audience ID before setting an audience weight."
   const minBudget = optionalNumber(input.minBudget)
   const maxBudget = optionalNumber(input.maxBudget)
   if (input.minBudget.trim() && minBudget === undefined) return "Minimum budget must be a valid number."

@@ -3,6 +3,7 @@ import test from "node:test"
 import type { CultureSignal } from "../domain/types.ts"
 import {
   evaluateResearchEvidence,
+  normalizeResearchModelAction,
   normalizeResearchTagQueries,
   researchTraceToJson,
 } from "./cultural-research-agent.ts"
@@ -100,4 +101,45 @@ test("research agent bounds long campaign descriptions before schema validation"
     "streetwear",
   ])
   assert.deepEqual(queries.map((query) => query.length), [10, 300])
+})
+
+test("research model actions normalize minimal and nested model responses", () => {
+  const currentSelection = {
+    focus: "campaign_fingerprint" as const,
+    includeBrand: true,
+    references: ["Dune"],
+    tagQueries: ["skincare"],
+  }
+  const minimal = normalizeResearchModelAction(
+    { action: "query_product_culture" },
+    currentSelection
+  )
+  assert.equal(minimal?.action, "query_product_culture")
+  assert.equal(minimal?.focus, "product_context")
+  const minimalSelection =
+    minimal && "selection" in minimal ? minimal.selection : undefined
+  assert.deepEqual(
+    minimalSelection?.tagQueries ?? [],
+    ["skincare"]
+  )
+
+  const nested = normalizeResearchModelAction(
+    {
+      action: "query_market_culture",
+      parameters: {
+        focus: "market_context",
+        includeBrand: false,
+        references: [],
+        tagQueries: ["streetwear"],
+      },
+    },
+    currentSelection
+  )
+  assert.equal(nested?.focus, "market_context")
+  const nestedSelection =
+    nested && "selection" in nested ? nested.selection : undefined
+  assert.deepEqual(
+    nestedSelection?.tagQueries ?? [],
+    ["streetwear"]
+  )
 })

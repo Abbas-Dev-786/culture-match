@@ -23,6 +23,7 @@ import {
   updateRunBaselineProviderIds,
   updateRunDatasetId,
   updateRunProviderIds,
+  updateRunProviderIdsForInitialComparison,
   updateRunProviderIdForRefinement,
 } from "@/lib/db/runs"
 import {
@@ -33,10 +34,8 @@ import {
 } from "@/lib/db/matches"
 import { createApifyClient } from "@/lib/tools/apify/client"
 import { getRunResults } from "@/lib/tools/apify/get-run-results"
-import { startCreatorSearch } from "@/lib/tools/apify/search-creators"
 import { ProviderError } from "@/lib/tools/provider-errors"
 import { createQlooClient } from "@/lib/tools/qloo/client"
-import { enrichCreatorsWithQloo } from "@/lib/tools/qloo/enrich-creators"
 import { withProviderRetry } from "@/lib/workflow/retry"
 import {
   actorPlanToJson,
@@ -44,6 +43,7 @@ import {
   searchPlanSchema,
   type SearchPlan,
 } from "@/lib/workflow/search-plan"
+import { generateModelSearchPlanResult } from "@/lib/workflow/search-plan-model"
 import { createServiceRoleClient } from "@/lib/server-admin"
 import type { WorkflowContext } from "@/lib/db/runs"
 import { ApplicationError, isApplicationError } from "@/lib/errors"
@@ -81,6 +81,13 @@ import {
   reserveAutonomyBudget,
 } from "@/lib/agent/autonomy-budget"
 import { decisionModeFromEnvironment } from "@/lib/agent/action-trace"
+import { createProviderRequestMeter } from "@/lib/agent/provider-usage"
+import { executeAgentTool } from "@/lib/agent/tool-execution"
+import {
+  createCreatorSearchTool,
+  createQlooCreatorEnrichmentTool,
+  actorPlanForTool,
+} from "@/lib/agent/provider-tools"
 import { logWorkflowEvent } from "@/lib/workflow/telemetry"
 
 const activeCampaigns = new Set<string>()
@@ -168,9 +175,16 @@ async function advanceWorkflow(
     if (!culture) {
       const retries: JsonObject[] = []
       const providerStartedAt = new Date().toISOString()
+      const researchUsage = createProviderRequestMeter()
       const research = await withProviderRetry(
         "qloo",
-        () => runCulturalResearchAgent(brief, createQlooClient()),
+        () =>
+          runCulturalResearchAgent(
+            brief,
+            createQlooClient({
+              onRequest: () => researchUsage.record("qloo"),
+            })
+          ),
         undefined,
         undefined,
         (record) =>
@@ -190,6 +204,7 @@ async function advanceWorkflow(
         providerCalls: research.trace.filter(
           (entry) => entry.action === "query_qloo"
         ).length,
+        providerRequests: researchUsage.snapshot().qlooRequests,
         modelCalls:
           typeof research.agentState.modelDecisionCount === "number"
             ? research.agentState.modelDecisionCount
@@ -243,15 +258,43 @@ async function advanceWorkflow(
         retryable: false,
       })
     if (hasPendingApproval(culture.providerSummary)) return run
-    const plans = createDeterministicSearchPlans(brief, culture.signals)
+    const deterministicPlans = createDeterministicSearchPlans(
+      brief,
+      culture.signals
+    )
+    const searchPlanResult = await generateModelSearchPlanResult(
+      brief,
+      culture.signals
+    )
+    const plans = searchPlanResult.plan
+      ? {
+          ...deterministicPlans,
+          cultureInformed: {
+            ...searchPlanResult.plan,
+            variant: "culture_informed" as const,
+          },
+          source: "model" as const,
+          queryConstruction: {
+            ...deterministicPlans.queryConstruction,
+            cultureInformed: {
+              ...deterministicPlans.queryConstruction.cultureInformed,
+              query: searchPlanResult.plan.query,
+            },
+          },
+        }
+      : deterministicPlans
     const broadPlan = plans.baseline
-    const culturePlan: SearchPlan = {
-      ...broadPlan,
-      variant: "culture_informed",
-    }
+    const culturePlan = plans.cultureInformed
+    const searchPlanBudget = reserveAutonomyBudget(
+      readAutonomyBudget(culture.providerSummary),
+      {
+        actions: 1,
+        modelCalls: searchPlanResult.attempted ? 1 : 0,
+      }
+    )
     const providerSummary: JsonObject = {
       ...culture.providerSummary,
-      discoveryStrategy: "broad_default",
+      discoveryStrategy: "qloo_guided_parallel",
       searchPlans: {
         baseline: actorPlanToJson(broadPlan),
         cultureInformed: actorPlanToJson(culturePlan),
@@ -264,13 +307,21 @@ async function advanceWorkflow(
           query: plans.queryConstruction.baseline.query,
         },
         cultureInformed: {
-          qlooTerms: [],
-          qlooSignalIds: [],
+          qlooTerms: plans.queryConstruction.cultureInformed.qlooTerms,
+          qlooSignalIds: plans.queryConstruction.cultureInformed.qlooSignalIds,
           query: culturePlan.query,
-          source: "broad_default",
+          source: "qloo_guided_parallel",
         },
       },
-      searchPlanSource: "deterministic",
+      searchPlanSource: plans.source,
+      searchPlanAgent: {
+        attempted: searchPlanResult.attempted,
+        decisionMode: searchPlanResult.decisionMode,
+        ...(searchPlanResult.fallbackReason
+          ? { fallbackReason: searchPlanResult.fallbackReason }
+          : {}),
+      },
+      autonomyBudget: autonomyBudgetToJson(searchPlanBudget),
     }
     await saveCultureProfile(client, {
       campaignId: campaign.id,
@@ -284,30 +335,66 @@ async function advanceWorkflow(
     const claim = await claimProviderStart(client, run)
     if (!claim) return run
 
-    const broadSearchBudget = reserveAutonomyBudget(
-      readAutonomyBudget(culture.providerSummary),
-      { actions: 1, providerCalls: 1 }
-    )
+    const broadSearchBudget = reserveAutonomyBudget(searchPlanBudget, {
+      actions: 2,
+      providerCalls: 2,
+    })
     await updateCultureProfileSummary(client, userId, run.id, {
       ...providerSummary,
       autonomyBudget: autonomyBudgetToJson(broadSearchBudget),
     })
-    const apify = createApifyClient()
-    // Broad discovery is the only initial paid search. The culture-informed
-    // slot is reserved for an evidence-driven refinement search.
+    const discoveryUsage = createProviderRequestMeter()
+    const apify = createApifyClient({
+      onRequest: () => discoveryUsage.record("apify"),
+    })
+    const creatorSearchTool = createCreatorSearchTool(apify)
+    // Run broad and Qloo-guided discovery in parallel so the comparison is
+    // meaningful before any later bounded refinement decision.
     const broadAttempt =
       claim.run.baseline_provider_run_id || claim.run.provider_run_id
         ? Promise.resolve(undefined)
-        : startCreatorSearch(
-            apify,
-            broadPlan,
-            `${run.idempotency_key}:broad`
-          )
+        : executeAgentTool(creatorSearchTool, {
+            plan: actorPlanForTool(broadPlan),
+            idempotencyKey: `${run.idempotency_key}:broad`,
+          }).then((result) => ({
+            runId: result.output.runId,
+            ...(result.output.datasetId
+              ? { datasetId: result.output.datasetId }
+              : {}),
+          }))
+    const cultureAttempt =
+      claim.run.baseline_provider_run_id || claim.run.provider_run_id
+        ? Promise.resolve(undefined)
+        : executeAgentTool(creatorSearchTool, {
+            plan: actorPlanForTool(culturePlan),
+            idempotencyKey: `${run.idempotency_key}:culture:initial`,
+          }).then((result) => ({
+            runId: result.output.runId,
+            ...(result.output.datasetId
+              ? { datasetId: result.output.datasetId }
+              : {}),
+          }))
 
     let persistedRun = claim.run
-    const broadResult = await Promise.allSettled([broadAttempt])
-    const broadAttemptResult = broadResult[0]
-    if (broadAttemptResult?.status === "fulfilled" && broadAttemptResult.value) {
+    const providerResults = await Promise.allSettled([
+      broadAttempt,
+      cultureAttempt,
+    ])
+    const measuredDiscoveryBudget = reserveAutonomyBudget(broadSearchBudget, {
+      providerRequests: discoveryUsage.snapshot().apifyRequests,
+    })
+    await updateCultureProfileSummary(client, userId, run.id, {
+      ...providerSummary,
+      autonomyBudget: autonomyBudgetToJson(measuredDiscoveryBudget),
+    })
+    const broadAttemptResult = providerResults[0]
+    const cultureAttemptResult = providerResults[1]
+    if (
+      broadAttemptResult?.status === "fulfilled" &&
+      broadAttemptResult.value &&
+      cultureAttemptResult?.status === "fulfilled" &&
+      cultureAttemptResult.value
+    ) {
       logWorkflowEvent({
         campaignId: campaign.id,
         analysisRunId: run.id,
@@ -316,18 +403,13 @@ async function advanceWorkflow(
         provider: "apify",
         startedAt: run.started_at,
       })
-      persistedRun = await updateRunBaselineProviderIds(
+      persistedRun = await updateRunProviderIdsForInitialComparison(
         client,
         persistedRun,
         broadAttemptResult.value.runId,
         broadAttemptResult.value.datasetId,
-        claim.claimToken
-      )
-      persistedRun = await updateRunProviderIds(
-        client,
-        persistedRun,
-        broadAttemptResult.value.runId,
-        broadAttemptResult.value.datasetId,
+        cultureAttemptResult.value.runId,
+        cultureAttemptResult.value.datasetId,
         claim.claimToken
       )
     } else if (!persistedRun.provider_run_id && persistedRun.baseline_provider_run_id) {
@@ -352,7 +434,7 @@ async function advanceWorkflow(
     }
     run = persistedRun
 
-    const failedAttempt = broadResult.find(
+    const failedAttempt = providerResults.find(
       (attempt) => attempt.status === "rejected"
     )
     if (failedAttempt?.status === "rejected") {
@@ -361,8 +443,8 @@ async function advanceWorkflow(
       }
       throw new ProviderError({
         provider: "apify",
-        code: "UPSTREAM_FAILURE",
-        message: "One of the parallel Apify searches failed to start",
+        code: "INVALID_PARAMETERS",
+        message: `One of the parallel Apify searches failed validation before starting: ${errorMessage(failedAttempt.reason)}`,
         retryable: false,
         cause: failedAttempt.reason,
       })
@@ -378,11 +460,15 @@ async function advanceWorkflow(
     return run
   }
 
+  const retrievalUsage = createProviderRequestMeter()
+  const retrievalApify = createApifyClient({
+    onRequest: () => retrievalUsage.record("apify"),
+  })
   const baselineResults = await withProviderRetry(
     "apify",
     () =>
       getRunResults(
-        createApifyClient(),
+        retrievalApify,
         run.baseline_provider_run_id as string,
         run.baseline_provider_dataset_id ?? undefined,
         new Date().toISOString(),
@@ -421,7 +507,7 @@ async function advanceWorkflow(
           "apify",
           () =>
             getRunResults(
-              createApifyClient(),
+              retrievalApify,
               run.provider_run_id as string,
               run.provider_dataset_id ?? undefined,
               new Date().toISOString(),
@@ -450,7 +536,7 @@ async function advanceWorkflow(
   }
   let enrichedBaselineCreators = baselineResults.creators
   let enrichedCultureCreators = cultureResults.creators
-  const culture = await getCultureProfile(client, userId, run.id)
+  let culture = await getCultureProfile(client, userId, run.id)
   if (!culture)
     throw new ProviderError({
       provider: "qloo",
@@ -459,8 +545,24 @@ async function advanceWorkflow(
       retryable: false,
     })
   if (hasPendingApproval(culture.providerSummary)) return run
+  const retrievalBudget = reserveAutonomyBudget(
+    readAutonomyBudget(culture.providerSummary),
+    {
+      actions: 1,
+      providerCalls: run.provider_run_id === run.baseline_provider_run_id ? 1 : 2,
+      providerRequests: retrievalUsage.snapshot().apifyRequests,
+    }
+  )
+  const retrievalSummary = {
+    ...culture.providerSummary,
+    autonomyBudget: autonomyBudgetToJson(retrievalBudget),
+  }
+  await updateCultureProfileSummary(client, userId, run.id, retrievalSummary)
+  culture = { ...culture, providerSummary: retrievalSummary }
+  const enrichmentUsage = createProviderRequestMeter()
+  let enrichmentBudget: ReturnType<typeof readAutonomyBudget> | undefined
   try {
-    const enrichmentBudget = reserveAutonomyBudget(
+    enrichmentBudget = reserveAutonomyBudget(
       readAutonomyBudget(culture.providerSummary),
       { actions: 1, providerCalls: 1 }
     )
@@ -469,21 +571,54 @@ async function advanceWorkflow(
       autonomyBudget: autonomyBudgetToJson(enrichmentBudget),
     })
     const allCreators = [
-      ...baselineResults.creators,
-      ...cultureResults.creators,
+      ...new Map(
+        [...baselineResults.creators, ...cultureResults.creators].map(
+          (creator) => [creator.providerCreatorId, creator] as const
+        )
+      ).values(),
     ]
-    const enrichedCreators = await enrichCreatorsWithQloo(
-      allCreators,
-      locationQueryForCampaign(campaign),
-      createQlooClient(),
-      normalizeCultureSignals(culture?.signals ?? []),
-      {
+    const baselineCreatorIds = new Set(
+      baselineResults.creators.map((creator) => creator.providerCreatorId)
+    )
+    const cultureCreatorIds = new Set(
+      cultureResults.creators.map((creator) => creator.providerCreatorId)
+    )
+    const enrichedCreators = (
+      await executeAgentTool(
+        createQlooCreatorEnrichmentTool(
+          createQlooClient({
+            onRequest: () => enrichmentUsage.record("qloo"),
+          }),
+          async (creator) => {
+            if (baselineCreatorIds.has(creator.providerCreatorId)) {
+              await saveCreatorCandidates(client, {
+                ...runOwnership(run, campaign.id, userId),
+                searchVariant: "baseline",
+                creators: [creator],
+              })
+            }
+            if (cultureCreatorIds.has(creator.providerCreatorId)) {
+              await saveCreatorCandidates(client, {
+                ...runOwnership(run, campaign.id, userId),
+                searchVariant: "culture_informed",
+                creators: [creator],
+              })
+            }
+          }
+        ),
+        {
+          creators: allCreators,
+          locationQuery: locationQueryForCampaign(campaign),
+          campaignSignals: normalizeCultureSignals(culture?.signals ?? []),
+          conditioning: {
         ...(brief.qlooAudienceIds ? { audienceIds: brief.qlooAudienceIds } : {}),
         ...(brief.qlooAudienceWeight !== undefined ? { audienceWeight: brief.qlooAudienceWeight } : {}),
         ...(brief.qlooAgeRange ? { ageRange: brief.qlooAgeRange } : {}),
         ...(brief.qlooGender ? { gender: brief.qlooGender } : {}),
-      }
-    )
+          },
+        }
+      )
+    ).output
     const enrichedById = new Map(
       enrichedCreators.map((creator) => [creator.providerCreatorId, creator])
     )
@@ -495,6 +630,17 @@ async function advanceWorkflow(
     )
   } catch {
     // Cultural creator enrichment is additive. Qloo market research remains the source of truth.
+  }
+  if (enrichmentBudget) {
+    const measuredEnrichmentBudget = reserveAutonomyBudget(enrichmentBudget, {
+      providerRequests: enrichmentUsage.snapshot().qlooRequests,
+    })
+    const enrichmentSummary = {
+      ...culture.providerSummary,
+      autonomyBudget: autonomyBudgetToJson(measuredEnrichmentBudget),
+    }
+    await updateCultureProfileSummary(client, userId, run.id, enrichmentSummary)
+    culture = { ...culture, providerSummary: enrichmentSummary }
   }
   await saveCreatorCandidates(client, {
     ...runOwnership(run, campaign.id, userId),
@@ -580,8 +726,6 @@ async function advanceWorkflow(
     approvedSignalIds: searchState.approvedSignalIds,
     refinementCount: searchState.refinementCount,
     maxRefinements: MAX_CREATOR_SEARCH_REFINEMENTS,
-    refinementEnabled:
-      process.env.ENABLE_AGENTIC_CREATOR_REFINEMENT === "true",
     targetedEnrichmentCount: readTargetedEnrichmentCount(culture.providerSummary),
   })
   const searchDecision = routedDecision.decision
@@ -603,7 +747,7 @@ async function advanceWorkflow(
     refinementCount: searchState.refinementCount,
   })
   const shouldEnrich = routedDecision.shouldEnrich
-  const requiresApproval = process.env.AGENTIC_REQUIRE_APPROVAL === "true"
+  const requiresApproval = true
   const approvedAction = searchState.approvedAction
   const approvedApprovalKey = searchState.approvedApprovalKey
   const approvalSatisfied =
@@ -685,13 +829,46 @@ async function advanceWorkflow(
       run.id,
       refinementSummary
     )
+    const targetedUsage = createProviderRequestMeter()
     if (enrichmentCandidates.length > 0) {
-      const targetedCreators = await enrichCreatorsWithQloo(
-        enrichmentCandidates,
-        locationQueryForCampaign(campaign),
-        createQlooClient(),
-        normalizeCultureSignals(culture.signals),
-        {
+      const targetedCreators = (
+        await executeAgentTool(
+          createQlooCreatorEnrichmentTool(
+            createQlooClient({
+              onRequest: () => targetedUsage.record("qloo"),
+            }),
+            async (creator) => {
+              if (
+                enrichedBaselineCreators.some(
+                  (candidate) =>
+                    candidate.providerCreatorId === creator.providerCreatorId
+                )
+              ) {
+                await saveCreatorCandidates(client, {
+                  ...runOwnership(run, campaign.id, userId),
+                  searchVariant: "baseline",
+                  creators: [creator],
+                })
+              }
+              if (
+                enrichedCultureCreators.some(
+                  (candidate) =>
+                    candidate.providerCreatorId === creator.providerCreatorId
+                )
+              ) {
+                await saveCreatorCandidates(client, {
+                  ...runOwnership(run, campaign.id, userId),
+                  searchVariant: "culture_informed",
+                  creators: [creator],
+                })
+              }
+            }
+          ),
+          {
+            creators: enrichmentCandidates,
+            locationQuery: locationQueryForCampaign(campaign),
+            campaignSignals: normalizeCultureSignals(culture.signals),
+            conditioning: {
           ...(brief.qlooAudienceIds
             ? { audienceIds: brief.qlooAudienceIds }
             : {}),
@@ -700,9 +877,12 @@ async function advanceWorkflow(
             : {}),
           ...(brief.qlooAgeRange ? { ageRange: brief.qlooAgeRange } : {}),
           ...(brief.qlooGender ? { gender: brief.qlooGender } : {}),
-        },
-        { creatorIds: enrichmentIds, maxCreators: enrichmentIds.length }
-      )
+            },
+            creatorIds: enrichmentIds,
+            maxCreators: enrichmentIds.length,
+          }
+        )
+      ).output
       const targetedById = new Map(
         targetedCreators.map((creator) => [creator.providerCreatorId, creator])
       )
@@ -723,8 +903,13 @@ async function advanceWorkflow(
         creators: enrichedCultureCreators,
       })
     }
+    const measuredTargetedBudget = reserveAutonomyBudget(
+      targetedEnrichmentBudget,
+      { providerRequests: targetedUsage.snapshot().qlooRequests }
+    )
     await updateCultureProfileSummary(client, userId, run.id, {
       ...refinementSummary,
+      autonomyBudget: autonomyBudgetToJson(measuredTargetedBudget),
       creatorSearchAgentState: {
         ...(refinementSummary.creatorSearchAgentState as JsonObject),
         pendingProviderOperation: null,
@@ -781,13 +966,26 @@ async function advanceWorkflow(
           approvalKey
         ),
       })
-      const refinedAttempt = await startCreatorSearch(
-        createApifyClient(),
-        refinedPlan,
-        refinementIdempotencyKey
+      const refinementUsage = createProviderRequestMeter()
+      const refinedAttemptResult = await executeAgentTool(
+        createCreatorSearchTool(
+          createApifyClient({
+            onRequest: () => refinementUsage.record("apify"),
+          })
+        ),
+        {
+          plan: actorPlanForTool(refinedPlan),
+          idempotencyKey: refinementIdempotencyKey,
+        }
+      )
+      const refinedAttempt = refinedAttemptResult.output
+      const measuredRefinementBudget = reserveAutonomyBudget(
+        refinementBudget,
+        { providerRequests: refinementUsage.snapshot().apifyRequests }
       )
       await updateCultureProfileSummary(client, userId, run.id, {
         ...refinementSummary,
+        autonomyBudget: autonomyBudgetToJson(measuredRefinementBudget),
         creatorSearchAgentState: {
           ...nextState,
           pendingProviderOperation: null,
@@ -949,11 +1147,14 @@ async function scoreWorkflow(
   const qlooMetrics = summarizeQlooCreatorSignals(
     cultureRows.map(normalizeStoredCreator)
   )
+  const creatorSearchState = readCreatorSearchState(culture.providerSummary)
   const comparison: BaselineComparison = {
     ...compareRuns(
     rankedCreators(baselineScores),
     rankedCreators(cultureDiscoveryScores)
     ),
+    cultureDiscoveryRan: run.provider_run_id !== run.baseline_provider_run_id,
+    refinementRan: creatorSearchState.refinementCount > 0,
     qlooAblation: compareQlooAblation(
       cultureFixedScores,
       cultureAblationScores,
@@ -996,10 +1197,8 @@ async function reportWorkflow(
   run: AnalysisRunRow,
   userId: string
 ): Promise<AnalysisRunRow> {
-  const modelEnabled = process.env.ENABLE_MODEL_REPORTS === "true"
-  if (modelEnabled) {
-    const culture = await getCultureProfile(client, userId, run.id)
-    const candidates = await getCreatorCandidates(
+  const culture = await getCultureProfile(client, userId, run.id)
+  const candidates = await getCreatorCandidates(
       client,
       userId,
       run.id,
@@ -1052,8 +1251,7 @@ async function reportWorkflow(
         }
       }
     }
-  }
-  if (modelEnabled) {
+  if (process.env.OPENROUTER_API_KEY?.trim() && process.env.OPENROUTER_MODEL?.trim()) {
     logWorkflowEvent({
       campaignId: campaign.id,
       analysisRunId: run.id,
@@ -1207,7 +1405,11 @@ function summarizeQlooCreatorSignals(
   const resolvedCreatorSignalCount = creators.reduce(
     (sum, creator) =>
       sum +
-      (creator.qlooSignals?.filter((signal) => signal.affinity !== undefined)
+      (creator.qlooSignals?.filter(
+        (signal) =>
+          signal.affinity !== undefined &&
+          (signal.campaignSignalIds?.length ?? 0) > 0
+      )
         .length ?? 0),
     0
   )
@@ -1308,6 +1510,11 @@ function readStoredCultureSearchPlan(
   return parsed.success
     ? { ...parsed.data, variant: "culture_informed" }
     : undefined
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message
+  return "unknown tool error"
 }
 
 function appendCreatorSearchTrace(

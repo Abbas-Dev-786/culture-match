@@ -70,11 +70,16 @@ export function CreatorCard({ match }: { match: CampaignMatchView }) {
                   </p>
                   {match.qlooSignals && match.qlooSignals.length > 0 ? (
                     <p className="mt-2 text-xs text-muted-foreground">
-                      Qloo-resolved: {match.qlooSignals.map((signal) => `${signal.name}${signal.affinity !== undefined ? ` (${signal.affinity.toFixed(2)})` : ""}`).join(", ")}
+                      Qloo campaign matches: {match.qlooSignals.map((signal) => `${signal.name}${signal.affinity !== undefined ? ` (${signal.affinity.toFixed(2)})` : ""}`).join(", ")}
                     </p>
                   ) : (
                     <p className="mt-2 text-xs text-muted-foreground">No creator-content signal was resolved by Qloo.</p>
                   )}
+                  {match.qlooCampaignComparison ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Qloo creator-to-campaign comparison: {match.qlooCampaignComparison.resultCount} shared cultural result{match.qlooCampaignComparison.resultCount === 1 ? "" : "s"}
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
               {match.reportSummary ? <p className="text-sm">{match.reportSummary}</p> : null}

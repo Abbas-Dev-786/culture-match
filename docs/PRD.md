@@ -127,7 +127,7 @@ Priority notation: **P0** = required for submission; **P1** = important if time 
 | FR-02 | Persist campaign and analysis run | P0 | A campaign receives a stable ID; stage/status and timestamps persist across refreshes. |
 | FR-03 | Qloo entity and tag resolution | P0 | Backend resolves brand/reference entities with spelling retries, falls back to scoped tag search when entity resolution fails, and surfaces ambiguity or unresolved status without inventing an entity. |
 | FR-04 | Five-layer regional taste research | P0 | Backend runs market, brand, product, reference and combined Qloo Taste Analysis layers with scoped tag types, centralized age normalization, safe weighting and sparse-tag operator rules; normalized signals and provider provenance are traceable. Retaining raw payloads is optional and time-limited. |
-| FR-05 | Broad creator search with optional refinement | P0 | Backend creates a validated broad plan without raw Qloo keywords, starts one `influship/influencer-search` run with idempotency protection, persists run/dataset IDs, and may start at most one critic-approved refinement search when `ENABLE_AGENTIC_CREATOR_REFINEMENT=true`. |
+| FR-05 | Broad creator search with bounded refinement | P0 | Backend creates a validated broad plan without raw Qloo keywords, starts one `influship/influencer-search` run with idempotency protection, persists run/dataset IDs, and may start at most one in-product-approved refinement search. |
 | FR-06 | Asynchronous actor status | P0 | Frontend polls campaign status; polling does not start duplicate actor runs. Terminal success/failure is displayed. |
 | FR-07 | Creator normalization | P0 | Each result is mapped into a stable internal schema; unknown fields and source payload are retained safely where useful. |
 | FR-08 | Deterministic match score | P0 | Every score is computed by code from declared inputs, with component values and missing-data notes exposed. |
@@ -212,7 +212,7 @@ Display broad discovery and any optional refinement side by side or in a switcha
 - **Security:** all provider secrets remain server-side; validate all user and model-generated inputs; do not expose raw API tokens in logs or responses.
 - **Reliability:** analysis status, provider run IDs and dataset IDs are persisted; an interrupted page session can resume by campaign ID; provider-start claims prevent duplicate Apify runs; retries are bounded to the configured attempt limit.
 - **Latency:** use asynchronous Apify runs and return the campaign ID immediately. Show stage progress instead of holding a single request open.
-- **Cost:** the campaign creator limit is capped at 100; Qloo creator enrichment is capped by `QLOO_CREATOR_ENRICH_LIMIT` (default 20); agentic decisions, optional creator refinement, and model reports are opt-in through environment flags. Refinement is capped at one additional Apify search.
+- **Cost:** the campaign creator limit and Qloo creator enrichment are capped at 100. Refinement is always bounded to one additional Apify search and requires in-product approval; model reports run only when model credentials are configured.
 - **Explainability:** every score is reproducible from stored normalized inputs and configured weights.
 - **Accessibility:** semantic forms, keyboard-accessible controls, readable contrast, clear status messages.
 - **Privacy:** collect only the campaign information necessary; don't store unnecessary personal data; raw provider payload retention is optional and expires after seven days by default.

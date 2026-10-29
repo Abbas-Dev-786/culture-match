@@ -142,7 +142,7 @@ For broad discovery and optional agent-selected refinement:
 - Do not let the model alter credentials, headers, endpoints, limits, or database writes.
 - Preserve campaign constraints and allow at most one additional refinement search.
 
-The initial query uses explicit campaign constraints without Qloo-derived terms. Qloo signals may be translated into a refinement query only when the creator-search agent selects `add_cultural_signals` and `ENABLE_AGENTIC_CREATOR_REFINEMENT=true`. The selected signal IDs, query, result count, and critic decision must be persisted.
+The initial query uses explicit campaign constraints without raw Qloo-derived terms. Qloo signals may be translated into a refinement query when the creator-search agent selects `add_cultural_signals`. The selected signal IDs, query, result count, and critic decision must be persisted.
 
 ## 6. Implement application status and recovery
 

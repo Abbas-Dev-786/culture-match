@@ -37,7 +37,7 @@ export function CultureProfile({
         </div>
 
         {profile.autonomyBudget ? (
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-4">
             <SummaryMetric
               label="Agent actions"
               value={`${profile.autonomyBudget.actionsUsed}/${profile.autonomyBudget.maxActions}`}
@@ -47,6 +47,11 @@ export function CultureProfile({
               label="Provider calls"
               value={`${profile.autonomyBudget.providerCallsUsed}/${profile.autonomyBudget.maxProviderCalls}`}
               detail="Used / maximum"
+            />
+            <SummaryMetric
+              label="Provider requests"
+              value={`${profile.autonomyBudget.providerRequestsUsed}/${profile.autonomyBudget.maxProviderRequests}`}
+              detail="Actual HTTP requests"
             />
             <SummaryMetric
               label="Model calls"
@@ -62,6 +67,17 @@ export function CultureProfile({
               <Badge variant="outline">Deterministic fallback</Badge>
               <span className="text-muted-foreground">
                 {profile.agentState.fallbackReason ?? "The configured agent model was unavailable."}
+              </span>
+            </div>
+          </div>
+        ) : null}
+
+        {profile.searchPlanAgent?.decisionMode === "deterministic_fallback" ? (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">Search-plan fallback</Badge>
+              <span className="text-muted-foreground">
+                {profile.searchPlanAgent.fallbackReason ?? "The model planner was unavailable; the validated deterministic plan was used."}
               </span>
             </div>
           </div>

@@ -12,14 +12,20 @@ export async function generateEvidenceGroundedReport(
 ): Promise<EvidenceGroundedReport | undefined> {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim()
   const modelId = process.env.OPENROUTER_MODEL?.trim()
-  if (!apiKey || !modelId || process.env.ENABLE_MODEL_REPORTS !== "true")
+  if (!apiKey || !modelId)
     return undefined
 
   const provider = createOpenRouter({ apiKey })
   const result = await generateText({
     model: provider(modelId),
+    timeout: 20_000,
     output: Output.object({ schema: evidenceGroundedReportSchema }),
     maxOutputTokens: 700,
+    providerOptions: {
+      openrouter: {
+        reasoning: { max_tokens: 256, exclude: true },
+      },
+    },
     prompt: evidenceGroundedPrompt(brief, creator, evidence),
   })
   if (!result.output) return undefined

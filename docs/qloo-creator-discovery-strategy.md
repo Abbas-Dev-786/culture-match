@@ -178,7 +178,7 @@ The important metric is not merely the final score. It is whether optional Qloo-
 1. Make broad discovery the default.
 2. Keep Qloo enrichment and cultural scoring enabled.
 3. Disable raw Qloo terms in the default creator query.
-4. Add an agent-selected refinement path behind a feature flag.
+4. Add an agent-selected refinement path with in-product approval and a one-search safety budget.
 5. Log the exact query, selected signal IDs, result count, and critic decision.
 6. Compare broad, optional-refinement and ablation results on recorded campaigns.
 7. Keep optional Qloo-guided refinement only when it demonstrates incremental value.

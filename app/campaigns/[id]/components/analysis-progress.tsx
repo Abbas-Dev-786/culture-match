@@ -5,9 +5,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Progress,
-  ProgressLabel,
-  ProgressTrack,
-  ProgressValue,
 } from "@/components/ui/progress"
 import { Spinner } from "@/components/ui/spinner"
 import type { CampaignStatusResponse } from "./types"
@@ -17,12 +14,12 @@ const stages: Array<{
   label: string
   description: string
 }> = [
-  { key: "queued", label: "Campaign received", description: "Waiting to start" },
-  { key: "researching_culture", label: "Researching market culture", description: "Resolving references and Qloo signals" },
-  { key: "searching_creators", label: "Searching creators", description: "Running broad discovery and evaluating optional refinement" },
-  { key: "scoring", label: "Scoring recommendations", description: "Normalizing evidence and calculating fit" },
-  { key: "generating_report", label: "Generating report", description: "Preparing explanations and hypotheses" },
-]
+    { key: "queued", label: "Campaign received", description: "Waiting to start" },
+    { key: "researching_culture", label: "Researching market culture", description: "Resolving references and Qloo signals" },
+    { key: "searching_creators", label: "Searching creators", description: "Running broad discovery and evaluating optional refinement" },
+    { key: "scoring", label: "Scoring recommendations", description: "Normalizing evidence and calculating fit" },
+    { key: "generating_report", label: "Generating report", description: "Preparing explanations and hypotheses" },
+  ]
 
 interface AnalysisProgressProps {
   run?: CampaignStatusResponse["run"]
@@ -60,13 +57,19 @@ export function AnalysisProgress({
         </div>
       </CardHeader>
       <CardContent className="grid gap-5">
-        <Progress aria-label="Campaign analysis progress" value={progress}>
-          <div className="flex w-full items-center">
-            <ProgressLabel>{run?.stageMessage ?? "Waiting for campaign status"}</ProgressLabel>
-            <ProgressValue />
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm font-medium">
+            <label>
+              {run?.stageMessage ?? "Waiting for campaign status"}
+            </label>
+            <span>{progress}%</span>
           </div>
-          <ProgressTrack />
-        </Progress>
+
+          <Progress
+            aria-label="Campaign analysis progress"
+            value={progress}
+          />
+        </div>
         <Accordion multiple defaultValue={run?.status === "running" ? ["stages"] : []} className="border-0">
           <AccordionItem value="stages" className="border-0">
             <AccordionTrigger className="px-0 py-2">
@@ -85,13 +88,12 @@ export function AnalysisProgress({
                   return (
                     <li key={stage.key} className="flex items-start gap-3 text-sm">
                       <span
-                        className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-medium ${
-                          isComplete
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : isCurrent
-                              ? "border-primary text-primary"
-                              : "text-muted-foreground"
-                        }`}
+                        className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-medium ${isComplete
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : isCurrent
+                            ? "border-primary text-primary"
+                            : "text-muted-foreground"
+                          }`}
                         aria-label={isComplete ? "Complete" : isCurrent ? "In progress" : "Not started"}
                       >
                         {isComplete ? "✓" : index + 1}

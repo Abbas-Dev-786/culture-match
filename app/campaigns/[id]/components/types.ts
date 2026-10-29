@@ -36,6 +36,11 @@ export interface CultureProfileView {
   unresolvedReferences: string[]
   signalCount: number
   searchPlanSource?: "deterministic" | "model"
+  searchPlanAgent?: {
+    attempted: boolean
+    decisionMode: "model" | "deterministic_fallback"
+    fallbackReason?: string
+  }
   researchTrace?: ResearchTraceView[]
   creatorSearchTrace?: Array<{
     toolName: string
@@ -63,6 +68,8 @@ export interface CultureProfileView {
     actionsUsed: number
     maxProviderCalls: number
     providerCallsUsed: number
+    maxProviderRequests: number
+    providerRequestsUsed: number
     maxModelCalls: number
     modelCallsUsed: number
   }
@@ -203,7 +210,23 @@ export interface CampaignMatchView {
   evidence: EvidenceView[]
   caveats: string[]
   contentSignals?: Array<{ text: string; sourceField: string }>
-  qlooSignals?: Array<{ name: string; affinity?: number; sourceGroup: string }>
+  qlooSignals?: Array<{
+    name: string
+    affinity?: number
+    sourceGroup: string
+    campaignSignalIds?: string[]
+  }>
+  qlooCampaignComparison?: {
+    groupA: string
+    groupB: string
+    resultCount: number
+    topResults: Array<{
+      signalId: string
+      name?: string
+      types: string[]
+      affinity?: number
+    }>
+  }
   reportSummary?: string
   campaignConcept?: {
     title: string
@@ -219,6 +242,8 @@ export interface ComparisonView {
   cultureInformedCount: number
   overlapRate: number
   materiallyChanged: boolean
+  cultureDiscoveryRan?: boolean
+  refinementRan?: boolean
   baselineOnlyIds: string[]
   cultureInformedOnlyIds: string[]
   rankChanges: Array<{

@@ -3,6 +3,7 @@ import type {
   CultureSignal,
   EvidenceRef,
   NormalizedCreator,
+  QlooSignalRecord,
   ScoreComponent,
 } from "@/lib/domain/types"
 import {
@@ -47,7 +48,17 @@ export function scoreCreators(
 ): ScoredCreator[] {
   return creators
     .map((creator) => scoreCreator(brief, signals, creator, observedAt, options))
-    .sort((left, right) => compareScores(left.campaignFitScore, right.campaignFitScore))
+    .sort((left, right) => {
+      const scoreOrder = compareScores(
+        left.campaignFitScore,
+        right.campaignFitScore
+      )
+      return scoreOrder !== 0
+        ? scoreOrder
+        : left.creator.providerCreatorId.localeCompare(
+            right.creator.providerCreatorId
+          )
+    })
 }
 
 export function scoreCreator(
@@ -120,11 +131,22 @@ function culturalAffinityComponent(
   const postContentSignals = creator.contentSignals.filter(
     (signal) => signal.evidenceKind !== "bio" && signal.sourceField !== "$.creator.bio"
   )
-  const qlooSignals = (creator.qlooSignals ?? []).filter((signal) => signal.affinity !== undefined)
+  const qlooSignals = (creator.qlooSignals ?? []).filter(
+    (signal) =>
+      signal.affinity !== undefined &&
+      (signal.campaignSignalIds?.length ?? 0) > 0
+  )
   if (postContentSignals.length > 0 && signals.length > 0 && qlooSignals.length > 0) {
-    const totalSignalWeight = qlooSignals.reduce((sum, signal) => sum + (signal.inputWeight ?? 1), 0)
+    const totalSignalWeight = qlooSignals.reduce(
+      (sum, signal) => sum + (signal.inputWeight ?? 1) * evidenceQuality(signal),
+      0
+    )
     const weightedAffinity = qlooSignals.reduce(
-      (sum, signal) => sum + normalizeAffinity(signal.affinity ?? 0) * (signal.inputWeight ?? 1),
+      (sum, signal) =>
+        sum +
+        normalizeAffinity(signal.affinity ?? 0) *
+          (signal.inputWeight ?? 1) *
+          evidenceQuality(signal),
       0,
     )
     const marketEvidence = signals
@@ -137,7 +159,7 @@ function culturalAffinityComponent(
       score: roundScore(totalSignalWeight > 0 ? weightedAffinity / totalSignalWeight : 0),
       weight: scoreWeights.culturalAffinity,
       availability: "conditional",
-      rationale: "Location-conditioned Qloo affinity for resolved creator-content signals; this is not audience-level affinity.",
+       rationale: "Campaign-conditioned Qloo affinity for resolved creator-content signals in the target market; this is not audience-level affinity.",
       evidence: [
         ...marketEvidence,
         ...qlooSignals.map((signal) => signal.evidence),
@@ -146,7 +168,7 @@ function culturalAffinityComponent(
           "Qloo content-to-market resonance",
           "$.derived.culturalAffinity",
           observedAt,
-          `Weighted ${qlooSignals.length} creator signals against the target market`,
+           `Weighted ${qlooSignals.length} creator signals against ${new Set(qlooSignals.flatMap((signal) => signal.campaignSignalIds ?? [])).size} campaign signals with Qloo evidence quality`,
         ),
       ],
     }
@@ -180,6 +202,12 @@ function culturalAffinityComponent(
     scoreWeights.culturalAffinity,
     "Qloo did not resolve usable post/content evidence or an exact person-entity match",
   )
+}
+
+function evidenceQuality(signal: QlooSignalRecord): number {
+  if (signal.evidence.verification === "verified") return 1
+  if (signal.evidence.verification === "provider_reported") return 0.85
+  return 0.5
 }
 
 function engagementRateComponent(creator: NormalizedCreator): ScoreComponent {

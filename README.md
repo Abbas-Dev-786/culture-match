@@ -25,7 +25,7 @@ pnpm install
 copy lib\\phase-0\\env.example .env.local
 ```
 
-Configure Supabase, Qloo, and Apify server credentials in `.env.local`. OpenRouter is optional and only used when both `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` are set with the relevant feature flag enabled. Broad discovery is the default; set `ENABLE_AGENTIC_DECISIONS=true` and `ENABLE_AGENTIC_CREATOR_REFINEMENT=true` to enable model-selected refinement actions.
+Configure Supabase, Qloo, and Apify server credentials in `.env.local`. OpenRouter is optional; when its credentials are present, the system uses it for validated search planning, bounded refinement decisions and evidence-grounded reports. Without model credentials, deterministic fallbacks keep the workflow fully operational.
 
 Apply the SQL migrations in `supabase/migrations` to the Supabase project before running a campaign. The `lib/db/migrations` directory is retained as the reviewed SQL source used by the migration tests; new deployments should use the canonical Supabase folder.
 

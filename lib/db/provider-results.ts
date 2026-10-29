@@ -251,6 +251,9 @@ function creatorToJson(creator: NormalizedCreator): JsonObject {
             ...(signal.inputWeight !== undefined
               ? { inputWeight: signal.inputWeight }
               : {}),
+            ...(signal.campaignSignalIds && signal.campaignSignalIds.length > 0
+              ? { campaignSignalIds: signal.campaignSignalIds }
+              : {}),
             sourceGroup: signal.sourceGroup,
             evidence: evidenceToJson(signal.evidence),
           })),
@@ -269,9 +272,31 @@ function creatorToJson(creator: NormalizedCreator): JsonObject {
             ...(signal.inputWeight !== undefined
               ? { inputWeight: signal.inputWeight }
               : {}),
+            ...(signal.campaignSignalIds && signal.campaignSignalIds.length > 0
+              ? { campaignSignalIds: signal.campaignSignalIds }
+              : {}),
             sourceGroup: signal.sourceGroup,
             evidence: evidenceToJson(signal.evidence),
           })),
+        }
+      : {}),
+    ...(creator.qlooCampaignComparison
+      ? {
+          qlooCampaignComparison: {
+            groupA: creator.qlooCampaignComparison.groupA,
+            groupB: creator.qlooCampaignComparison.groupB,
+            resultCount: creator.qlooCampaignComparison.resultCount,
+            topResults: creator.qlooCampaignComparison.topResults.map(
+              (result) => ({
+                signalId: result.signalId,
+                ...(result.name ? { name: result.name } : {}),
+                types: result.types,
+                ...(result.affinity !== undefined
+                  ? { affinity: result.affinity }
+                  : {}),
+              })
+            ),
+          },
         }
       : {}),
   }

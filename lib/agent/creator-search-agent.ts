@@ -72,8 +72,14 @@ export async function decideCreatorSearch(
   try {
     const result = await generateText({
       model: createOpenRouter({ apiKey })(modelId),
+      timeout: 20_000,
       output: Output.object({ schema: creatorSearchActionSchema }),
       maxOutputTokens: 500,
+      providerOptions: {
+        openrouter: {
+          reasoning: { max_tokens: 256, exclude: true },
+        },
+      },
       prompt: [
         "Critique this creator search and choose one bounded next action.",
         "Preserve all campaign constraints. The workflow permits at most one refinement search after the broad search.",
@@ -265,7 +271,6 @@ export function creatorSearchStateToJson(
     rejectedActions: action.rejectedActions,
     refinementCount,
     budgetRemaining: Math.max(0, MAX_CREATOR_SEARCH_REFINEMENTS - refinementCount),
-    refinementEnabled: process.env.ENABLE_AGENTIC_CREATOR_REFINEMENT === "true",
     decisionMode: action.decisionMode,
     ...(action.fallbackReason ? { fallbackReason: action.fallbackReason } : {}),
     decision: action.decision,

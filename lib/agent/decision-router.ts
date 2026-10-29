@@ -15,7 +15,6 @@ export function routeCreatorSearchDecision(input: {
   approvedPlan?: SearchPlan
   refinementCount: number
   maxRefinements: number
-  refinementEnabled: boolean
   targetedEnrichmentCount: number
 }): {
   decision: CreatorSearchDecision
@@ -73,7 +72,6 @@ export function routeCreatorSearchDecision(input: {
   return {
     decision,
     canRefine:
-      input.refinementEnabled &&
       input.evidenceDecision === "refine_creator_search" &&
       decision.decision === "refine_creator_search" &&
       input.refinementCount < input.maxRefinements,

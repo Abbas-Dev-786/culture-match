@@ -50,12 +50,6 @@ export function decisionModeFromEnvironment(): {
 } {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim()
   const modelId = process.env.OPENROUTER_MODEL?.trim()
-  if (process.env.ENABLE_AGENTIC_DECISIONS !== "true") {
-    return {
-      mode: "deterministic_fallback",
-      fallbackReason: "agentic_decisions_disabled",
-    }
-  }
   if (!apiKey || !modelId) {
     return {
       mode: "deterministic_fallback",
